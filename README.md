@@ -1,6 +1,6 @@
-# 🌍 BhoomiTrack
+# \# 🌍 BhoomiTrack
 
-# Real-Time National Land Acquisition \& Management System
+# \### Real-Time National Land Acquisition \& Management System
 
 # 
 
@@ -12,27 +12,31 @@
 
 # 
 
-# Key Features
+# \---
 
 # 
 
-# \- Interactive GIS Map: Visualize geographical data and land parcels using an interactive map interface.
-
-# \- Land Parcel Analysis: Identify and analyze land parcels affected by proposed infrastructure projects.
-
-# \- Route-Based Analysis: Evaluate land parcels along proposed project routes using geospatial buffers.
-
-# \- Spatial Data Processing: Perform spatial queries and geographical calculations using PostGIS.
-
-# \- Parcel Identification: Retrieve and visualize relevant parcel information based on geographical boundaries.
-
-# \- Role-Based Access: Provide access to relevant platform functionalities based on user roles.
-
-# \- Centralized Data Management: Maintain structured project and geographical information.
+# \## Key Features
 
 # 
 
-# GIS Capabilities
+# \- \*\*Interactive GIS Map:\*\* Visualize geographical data and land parcels using an interactive map interface.
+
+# \- \*\*Land Parcel Analysis:\*\* Identify and analyze land parcels affected by proposed infrastructure projects.
+
+# \- \*\*Route-Based Analysis:\*\* Evaluate land parcels along proposed project routes using geospatial buffers.
+
+# \- \*\*Spatial Data Processing:\*\* Perform spatial queries and geographical calculations using PostGIS.
+
+# \- \*\*Parcel Identification:\*\* Retrieve and visualize relevant parcel information based on geographical boundaries.
+
+# \- \*\*Role-Based Access:\*\* Provide access to relevant platform functionalities based on user roles.
+
+# \- \*\*Centralized Data Management:\*\* Maintain structured project and geographical information.
+
+# 
+
+# \## GIS Capabilities
 
 # 
 
@@ -58,7 +62,7 @@
 
 # 
 
-# Technology Stack
+# \## Technology Stack
 
 # 
 
@@ -86,7 +90,7 @@
 
 # 
 
-# System Architecture
+# \## System Architecture
 
 # 
 
@@ -146,11 +150,11 @@
 
 # 
 
-# Getting Started
+# \## Getting Started
 
 # 
 
-# Prerequisites
+# \### Prerequisites
 
 # 
 
@@ -168,11 +172,11 @@
 
 # 
 
-# Installation
+# \### Installation
 
 # 
 
-# 1\. Clone the repository
+# \*\*1. Clone the repository\*\*
 
 # 
 
@@ -184,7 +188,7 @@
 
 # 
 
-# 2\. Navigate to the project directory
+# \*\*2. Navigate to the project directory\*\*
 
 # 
 
@@ -196,7 +200,7 @@
 
 # 
 
-# 3\. Install dependencies
+# \*\*3. Install dependencies\*\*
 
 # 
 
@@ -208,7 +212,7 @@
 
 # 
 
-# 4\. Configure environment variables
+# \*\*4. Configure environment variables\*\*
 
 # 
 
@@ -230,7 +234,7 @@
 
 # 
 
-# 5\. Start the development server
+# \*\*5. Start the development server\*\*
 
 # 
 
@@ -246,7 +250,7 @@
 
 # 
 
-# Geospatial Analysis Workflow
+# \## Geospatial Analysis Workflow
 
 # 
 
@@ -264,7 +268,7 @@
 
 # 
 
-# Project Objective
+# \## Project Objective
 
 # 
 
@@ -276,7 +280,7 @@
 
 # 
 
-# Contributors
+# \## Contributors
 
 # 
 
@@ -292,7 +296,7 @@
 
 # 
 
-# License
+# \## License
 
 # 
 
