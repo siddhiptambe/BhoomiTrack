@@ -40,12 +40,14 @@ const en: Dict = {
   "auth.needAccount": "Need an account? Create one",
   "auth.haveAccount": "Already have an account? Sign in",
   "auth.unauthorized": "Access not permitted",
-  "auth.unauthorizedBody": "Your account role does not permit access to this portal. Role-based access control blocked the request.",
+  "auth.unauthorizedBody":
+    "Your account role does not permit access to this portal. Role-based access control blocked the request.",
   "auth.goToMyPortal": "Go to my portal",
   "auth.signedInAs": "Signed in as",
   "auth.notSignedIn": "Not signed in",
   "auth.roleHint": "Prototype only. A real deployment assigns roles administratively.",
-  "auth.syntheticIdentities": "Use synthetic demo identities only. Never enter real citizen or government credentials.",
+  "auth.syntheticIdentities":
+    "Use synthetic demo identities only. Never enter real citizen or government credentials.",
   "auth.account": "Account",
   "app.name": "Integrated Land Acquisition & Management Platform",
   "app.short": "BhoomiTrack",
@@ -53,7 +55,7 @@ const en: Dict = {
   "nav.home": "Home",
   "nav.officer": "Officer / Admin",
   "nav.ministry": "Ministry / Oversight",
-  "nav.citizen": "Citizen / Landowner",
+  "nav.citizen": "Citizen",
   "nav.about": "About the platform",
   "common.language": "Language",
   "common.largeText": "Large text",
@@ -62,9 +64,10 @@ const en: Dict = {
   "common.openPortal": "Open portal",
   "banner.prototype":
     "Prototype build. Case-level data is synthetic or representative — not official government records.",
+  "banner.citizenPrototype":
+    "Prototype build. Case-level data is representative — not official government records.",
   "landing.title": "BhoomiTrack",
-  "landing.subtitle":
-    "Integrated Land Acquisition & Management Platform",
+  "landing.subtitle": "Integrated Land Acquisition & Management Platform",
   "landing.choose": "Choose your portal",
   "officer.title": "Officer / Admin workspace",
   "officer.subtitle":
@@ -99,12 +102,14 @@ const hi: Dict = {
   "auth.needAccount": "खाता नहीं है? बनाएँ",
   "auth.haveAccount": "पहले से खाता है? साइन इन करें",
   "auth.unauthorized": "पहुँच अनुमत नहीं",
-  "auth.unauthorizedBody": "आपकी भूमिका इस पोर्टल तक पहुँच की अनुमति नहीं देती। भूमिका-आधारित नियंत्रण ने अनुरोध रोक दिया।",
+  "auth.unauthorizedBody":
+    "आपकी भूमिका इस पोर्टल तक पहुँच की अनुमति नहीं देती। भूमिका-आधारित नियंत्रण ने अनुरोध रोक दिया।",
   "auth.goToMyPortal": "मेरे पोर्टल पर जाएँ",
   "auth.signedInAs": "साइन इन:",
   "auth.notSignedIn": "साइन इन नहीं",
   "auth.roleHint": "केवल प्रोटोटाइप। वास्तविक तैनाती में भूमिकाएँ प्रशासनिक रूप से दी जाती हैं।",
-  "auth.syntheticIdentities": "केवल काल्पनिक डेमो पहचान का उपयोग करें। वास्तविक नागरिक या शासकीय क्रेडेंशियल दर्ज न करें।",
+  "auth.syntheticIdentities":
+    "केवल काल्पनिक डेमो पहचान का उपयोग करें। वास्तविक नागरिक या शासकीय क्रेडेंशियल दर्ज न करें।",
   "auth.account": "खाता",
   "app.name": "Integrated Land Acquisition & Management Platform",
   "app.short": "BhoomiTrack",
@@ -112,7 +117,7 @@ const hi: Dict = {
   "nav.home": "मुखपृष्ठ",
   "nav.officer": "अधिकारी / प्रशासन",
   "nav.ministry": "मंत्रालय / निगरानी",
-  "nav.citizen": "नागरिक / भूस्वामी",
+  "nav.citizen": "नागरिक",
   "nav.about": "प्रणाली के बारे में",
   "common.language": "भाषा",
   "common.largeText": "बड़ा पाठ",
@@ -121,16 +126,16 @@ const hi: Dict = {
   "common.openPortal": "पोर्टल खोलें",
   "banner.prototype":
     "प्रोटोटाइप संस्करण। प्रकरण-स्तरीय आंकड़े काल्पनिक/प्रतिनिधिक हैं — शासकीय अभिलेख नहीं।",
+  "banner.citizenPrototype":
+    "प्रोटोटाइप संस्करण। प्रकरण-स्तरीय आंकड़े प्रतिनिधिक हैं — शासकीय अभिलेख नहीं।",
   "landing.title": "BhoomiTrack",
-  "landing.subtitle":
-    "Integrated Land Acquisition & Management Platform",
+  "landing.subtitle": "Integrated Land Acquisition & Management Platform",
   "landing.choose": "अपना पोर्टल चुनें",
   "officer.title": "अधिकारी / प्रशासन कार्यक्षेत्र",
   "officer.subtitle":
     "प्रकरण बनाएँ और आगे बढ़ाएँ, भूखंड, दस्तावेज़, आपत्तियाँ एवं कब्ज़ा प्रबंधित करें।",
   "ministry.title": "मंत्रालय / निगरानी डैशबोर्ड",
-  "ministry.subtitle":
-    "पोर्टफोलियो स्थिति, चरण वितरण, मुआवज़ा प्रवाह, आपत्ति विश्लेषण और जोखिम।",
+  "ministry.subtitle": "पोर्टफोलियो स्थिति, चरण वितरण, मुआवज़ा प्रवाह, आपत्ति विश्लेषण और जोखिम।",
   "citizen.title": "मेरी भूमि, मेरा प्रकरण",
   "citizen.subtitle":
     "देखें कि आपकी कौन-सी भूमि प्रभावित है, क्या हो रहा है, और आपको आगे क्या करना है।",
@@ -158,12 +163,14 @@ const mr: Dict = {
   "auth.needAccount": "खाते नाही? तयार करा",
   "auth.haveAccount": "खाते आहे? साइन इन करा",
   "auth.unauthorized": "प्रवेश अनुमत नाही",
-  "auth.unauthorizedBody": "आपली भूमिका या पोर्टलमध्ये प्रवेशाची अनुमती देत नाही. भूमिका-आधारित नियंत्रणाने विनंती अडवली.",
+  "auth.unauthorizedBody":
+    "आपली भूमिका या पोर्टलमध्ये प्रवेशाची अनुमती देत नाही. भूमिका-आधारित नियंत्रणाने विनंती अडवली.",
   "auth.goToMyPortal": "माझ्या पोर्टलवर जा",
   "auth.signedInAs": "साइन इन:",
   "auth.notSignedIn": "साइन इन नाही",
   "auth.roleHint": "केवळ प्रोटोटाइप. प्रत्यक्ष वापरात भूमिका प्रशासकीयरित्या दिल्या जातात.",
-  "auth.syntheticIdentities": "केवळ काल्पनिक डेमो ओळख वापरा. खरी नागरिक किंवा शासकीय क्रेडेन्शियल्स टाकू नका.",
+  "auth.syntheticIdentities":
+    "केवळ काल्पनिक डेमो ओळख वापरा. खरी नागरिक किंवा शासकीय क्रेडेन्शियल्स टाकू नका.",
   "auth.account": "खाते",
   "app.name": "Integrated Land Acquisition & Management Platform",
   "app.short": "BhoomiTrack",
@@ -171,7 +178,7 @@ const mr: Dict = {
   "nav.home": "मुख्यपृष्ठ",
   "nav.officer": "अधिकारी / प्रशासन",
   "nav.ministry": "मंत्रालय / देखरेख",
-  "nav.citizen": "नागरिक / भूधारक",
+  "nav.citizen": "नागरिक",
   "nav.about": "प्रणालीविषयी",
   "common.language": "भाषा",
   "common.largeText": "मोठा मजकूर",
@@ -180,19 +187,17 @@ const mr: Dict = {
   "common.openPortal": "पोर्टल उघडा",
   "banner.prototype":
     "प्रोटोटाइप आवृत्ती. प्रकरण-स्तरीय माहिती काल्पनिक/प्रातिनिधिक आहे — शासकीय नोंदी नाहीत.",
+  "banner.citizenPrototype":
+    "प्रोटोटाइप आवृत्ती. प्रकरण-स्तरीय माहिती प्रातिनिधिक आहे — शासकीय नोंदी नाहीत.",
   "landing.title": "BhoomiTrack",
-  "landing.subtitle":
-    "Integrated Land Acquisition & Management Platform",
+  "landing.subtitle": "Integrated Land Acquisition & Management Platform",
   "landing.choose": "आपले पोर्टल निवडा",
   "officer.title": "अधिकारी / प्रशासन कार्यक्षेत्र",
-  "officer.subtitle":
-    "प्रकरणे तयार करा व पुढे न्या; भूखंड, कागदपत्रे, हरकती व ताबा हाताळा.",
+  "officer.subtitle": "प्रकरणे तयार करा व पुढे न्या; भूखंड, कागदपत्रे, हरकती व ताबा हाताळा.",
   "ministry.title": "मंत्रालय / देखरेख डॅशबोर्ड",
-  "ministry.subtitle":
-    "एकूण स्थिती, टप्पा वितरण, मोबदला प्रवाह, हरकत विश्लेषण आणि जोखीम.",
+  "ministry.subtitle": "एकूण स्थिती, टप्पा वितरण, मोबदला प्रवाह, हरकत विश्लेषण आणि जोखीम.",
   "citizen.title": "माझी जमीन, माझे प्रकरण",
-  "citizen.subtitle":
-    "तुमची कोणती जमीन बाधित आहे, काय सुरू आहे आणि पुढे काय करायचे ते पहा.",
+  "citizen.subtitle": "तुमची कोणती जमीन बाधित आहे, काय सुरू आहे आणि पुढे काय करायचे ते पहा.",
   "citizen.q1": "माझी कोणती जमीन यात आहे?",
   "citizen.q2": "सध्या काय सुरू आहे?",
   "citizen.q3": "मला काही करायचे आहे का?",
@@ -227,10 +232,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = next;
   }, []);
 
-  const t = useCallback(
-    (key: string) => DICTS[lang][key] ?? en[key] ?? key,
-    [lang],
-  );
+  const t = useCallback((key: string) => DICTS[lang][key] ?? en[key] ?? key, [lang]);
 
   const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
 

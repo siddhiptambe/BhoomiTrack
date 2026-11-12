@@ -1,14 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireRole } from "@/lib/route-guards";
-import { AppShell, PhasePlaceholder } from "@/components/layout/AppShell";
-import { PageHeader, Section, MetricCard } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
+import { useQuery } from "@tanstack/react-query";
+import { AppShell } from "@/components/layout/AppShell";
+import { PageHeader, Section } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/ui/status-pill";
-import {
-  MINISTRY_METRICS,
-  MINISTRY_PROGRESS,
-  MINISTRY_RISK,
-} from "@/lib/demo-data";
+import { AGENCIES, AGENCY_META } from "@/lib/domain";
+import { requireRole } from "@/lib/route-guards";
+import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
+import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
 
 export const Route = createFileRoute("/_authenticated/ministry/")({
   beforeLoad: () => requireRole("ministry"),
@@ -17,14 +15,12 @@ export const Route = createFileRoute("/_authenticated/ministry/")({
       { title: "Ministry Oversight — BhoomiTrack" },
       {
         name: "description",
-        content:
-          "Executive oversight view: projects, acquisition progress, parcels, objections, compensation, R&R and delay risk.",
+        content: "Programme oversight using supported project and acquisition case context.",
       },
       { property: "og:title", content: "Ministry Oversight — BhoomiTrack" },
       {
         property: "og:description",
-        content:
-          "Portfolio progress, compensation pipeline, objection load and delay risk across monitored projects.",
+        content: "Supported project and acquisition case context.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -34,91 +30,97 @@ export const Route = createFileRoute("/_authenticated/ministry/")({
 });
 
 function MinistryPortal() {
+  const casesQuery = useQuery({
+    queryKey: caseQueryKeys.list(),
+    queryFn: listSharedCases,
+  });
+
   return (
     <AppShell portal="ministry">
       <PageHeader
         eyebrow="Ministry / Oversight"
-        title="Portfolio overview"
-        description="Aggregated progress and risk across monitored demonstration projects. Real analytics arrive in later phases."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        title="Programme overview"
+        description="Project and case context comes from the shared case source. Portfolio analytics and GIS impact are unavailable here unless supplied by a verified source."
       />
 
-      <Section title="Portfolio at a glance">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {MINISTRY_METRICS.map((m) => (
-            <MetricCard key={m.key} label={m.label} value={m.value} />
-          ))}
-        </div>
-      </Section>
-
       <Section
-        title="Acquisition progress"
-        description="Share of the monitored portfolio completed at each stage."
+        title="Agency availability"
+        description="National Highways is the active prototype. Other agencies remain preview experiences."
       >
-        <div className="surface-panel divide-y divide-border">
-          {MINISTRY_PROGRESS.map((row) => (
-            <div key={row.label} className="px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-sm font-medium">
-                  {row.label}
-                </span>
-                <span className="shrink-0 text-sm font-semibold tabular-nums">
-                  {row.percent}%
-                </span>
-              </div>
-              <div
-                role="img"
-                aria-label={`${row.label}: ${row.percent} percent`}
-                className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted"
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {AGENCIES.map((agency) => {
+            const metadata = AGENCY_META[agency];
+            const active = metadata.status === "Active Prototype";
+
+            return (
+              <li
+                key={agency}
+                className="surface-panel flex items-center justify-between gap-3 p-4"
               >
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${row.percent}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        title="Risks & delays"
-        description="Signals raised for oversight review. Indicative only — no automated decision is made."
-      >
-        <ul className="space-y-2">
-          {MINISTRY_RISK.map((r) => (
-            <li
-              key={r.project}
-              className="surface-panel grid gap-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">{r.project}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{r.signal}</p>
-              </div>
-              <StatusPill tone={r.tone}>{r.label}</StatusPill>
-            </li>
-          ))}
+                <span className="text-sm font-medium">{metadata.label}</span>
+                <StatusPill tone={active ? "progress" : "neutral"}>
+                  {active ? "Active prototype" : "Preview / Coming Soon"}
+                </StatusPill>
+              </li>
+            );
+          })}
         </ul>
       </Section>
 
-      <Section title="Coming in later phases">
-        <div className="grid gap-3 md:grid-cols-3">
-          <PhasePlaceholder
-            title="State & district analytics"
-            description="Drill down from national totals to district and project level."
-            phase="Phase 4"
-          />
-          <PhasePlaceholder
-            title="Compensation & R&R pipeline"
-            description="Award, deposit, disbursement and entitlement settlement tracking."
-            phase="Phase 6"
-          />
-          <PhasePlaceholder
-            title="Predictive delay risk"
-            description="Evidence-backed risk scoring with model version and confidence."
-            phase="Phase 7"
-          />
-        </div>
+      <Section
+        title="Supported acquisition cases"
+        description="Case, project, parcel, and current stage are read from the shared case store under the signed-in session’s RLS."
+      >
+        {casesQuery.isPending ? (
+          <p className="surface-panel p-4 text-sm text-muted-foreground">
+            Loading cases visible to this account…
+          </p>
+        ) : casesQuery.isError ? (
+          <p role="alert" className="surface-panel p-4 text-sm text-destructive">
+            Case context could not be loaded.
+          </p>
+        ) : casesQuery.data.length === 0 ? (
+          <p className="surface-panel p-4 text-sm text-muted-foreground">
+            No acquisition cases are visible to this account.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {casesQuery.data.map((sharedCase) => (
+              <li key={sharedCase.id} className="surface-panel p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">{sharedCase.id}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {sharedCase.project.projectName || "Project name unavailable"}
+                      {sharedCase.project.projectCode ? ` · ${sharedCase.project.projectCode}` : ""}
+                    </p>
+                  </div>
+                  <StatusPill tone="neutral">
+                    {getStageDisplayLabel(sharedCase.currentStage)}
+                  </StatusPill>
+                </div>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-muted-foreground">Parcel</dt>
+                    <dd className="font-medium">
+                      {sharedCase.parcel.parcelRef || "Parcel reference unavailable"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">District</dt>
+                    <dd className="font-medium">
+                      {sharedCase.parcel.district || "District unavailable"}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                  Readiness, blockers, and GIS impact are unavailable from this Ministry view’s
+                  verified data source.
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
     </AppShell>
   );

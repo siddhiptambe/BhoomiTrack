@@ -1,142 +1,211 @@
-// src/routes/_authenticated/citizen/case.tsx
-import { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Building2, FileText, Landmark, MapPinned, ShieldCheck } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowRight, CalendarDays, ClipboardList, FileText, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
-import { useI18n } from "@/lib/i18n";
-import { listSharedCases } from "@/lib/shared-case/case-store";
-import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
+import {
+  CitizenCaseContext,
+  CitizenCaseState,
+  useCitizenCase,
+} from "@/lib/shared-case/citizen-case";
 import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
+import { resolveCitizenCasePresentation } from "@/lib/shared-case/citizen-demo-data";
 
 export const Route = createFileRoute("/_authenticated/citizen/case")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "My Case — Citizen Portal" },
-      { name: "description", content: "Citizen case overview with parcel, project and stage information." },
+      { name: "description", content: "Citizen acquisition case overview." },
     ],
   }),
   component: CitizenCasePage,
 });
 
+function formatDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
+        date,
+      );
+}
+
 function CitizenCasePage() {
-  const { t } = useI18n(); // retained for possible i18n usage
-  const [caseData, setCaseData] = useState<SharedCaseContract | null>(null);
-
-  useEffect(() => {
-    // Load the first canonical case for the authenticated citizen
-    listSharedCases()
-      .then((cases) => setCaseData(cases[0] ?? null))
-      .catch(console.error);
-  }, []);
-
-  if (!caseData) {
-    return (
-      <AppShell portal="citizen">
-        <PageHeader
-          eyebrow="Citizen / Landowner"
-          title="My Case"
-          description="Loading case data…"
-          actions={<DataClassBadge dataClass="synthetic" />}
-        />
-        <p>Loading...</p>
-      </AppShell>
-    );
-  }
-
-  // ----- Mappings from SharedCaseContract -----
-  const projectName = caseData.project?.projectName ?? "Not available";
-  const caseRef = caseData.id ?? "Not available";
-  const stageLabel = getStageDisplayLabel(caseData.currentStage);
-  const parcelRef = caseData.parcel?.parcelRef ?? "Not available";
-  const landType = caseData.landType ?? "Not available";
-  const readiness = caseData.readiness ?? "Not available";
+  const query = useCitizenCase();
+  const caseData = query.data?.selected ?? null;
+  const presentation = caseData ? resolveCitizenCasePresentation(caseData) : null;
 
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
+        eyebrow="Citizen portal"
         title="My Case"
-        description="Your acquisition case summary, parcel details and the current legal / administrative stage."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Review your acquisition case, current status and recorded next steps."
       />
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        {/* Case overview */}
-        <Section title="Case overview" description="Current project, parcel and next procedural step.">
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Project */}
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <Building2 className="size-3.5 text-primary" />
-                Project
-              </div>
-              <p className="mt-2 text-base font-bold text-foreground">{projectName}</p>
+      <CitizenCaseState loading={query.isLoading} error={query.error} caseData={caseData} />
+      {caseData ? (
+        <>
+          <CitizenCaseContext caseData={caseData} />
+          <Section
+            title="Case overview"
+            description="Identity and status from your selected shared case record."
+          >
+            <dl className="surface-panel grid gap-5 p-5 sm:grid-cols-2 xl:grid-cols-3">
+              <Detail
+                label="Case ID"
+                value={caseData.id}
+                icon={<FileText className="size-4" aria-hidden="true" />}
+              />
+              <Detail
+                label="Parcel"
+                value={presentation?.parcelRef || "Unavailable"}
+                icon={<ClipboardList className="size-4" aria-hidden="true" />}
+              />
+              <Detail label="Project" value={caseData.project.projectName || "Unavailable"} />
+              <Detail label="Current stage" value={getStageDisplayLabel(caseData.currentStage)} />
+              <Detail
+                label="Readiness"
+                value={caseData.readiness}
+                icon={<ShieldCheck className="size-4" aria-hidden="true" />}
+              />
+              <Detail
+                label="Recorded landholder"
+                value={presentation?.recordedLandholder || "Unavailable"}
+              />
+              <Detail
+                label="Owner reference"
+                value={presentation?.ownerReference || "Unavailable"}
+              />
+              <Detail
+                label="Recorded interest"
+                value={presentation?.recordedInterestType || "Unavailable"}
+              />
+              <Detail
+                label="Owner verification"
+                value={presentation?.ownerVerification || "Unavailable"}
+              />
+              <Detail
+                label="Citizen / Party"
+                value={presentation?.citizenPartyName ? "Citizen" : "Unavailable"}
+              />
+            </dl>
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/30 p-4 text-sm">
+              <span className="font-semibold">Portal relationship</span>
+              <span>{presentation?.portalRelationshipLabel || "Unavailable"}</span>
+              <span className="basis-full text-muted-foreground">
+                This Citizen access relationship does not by itself establish legal ownership.
+              </span>
             </div>
+          </Section>
 
-            {/* Case ID */}
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <FileText className="size-3.5 text-primary" />
-                Case ID
+          <Section
+            title="Case progress"
+            description="Current workflow stage recorded for the selected case."
+          >
+            <div className="surface-panel p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    Current stage
+                  </p>
+                  <h2 className="mt-2 font-serif text-xl font-bold">
+                    {getStageDisplayLabel(caseData.currentStage)}
+                  </h2>
+                </div>
+                <StatusPill tone="progress">Current</StatusPill>
               </div>
-              <p className="mt-2 font-mono text-base font-bold text-foreground">{caseRef}</p>
-            </div>
-
-            {/* Parcel */}
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <MapPinned className="size-3.5 text-primary" />
-                Parcel
+              <div
+                className="mt-5 flex items-center gap-3 border-t border-border pt-4"
+                aria-hidden="true"
+              >
+                <span className="size-3 rounded-full bg-primary ring-4 ring-primary/15" />
+                <span className="h-px flex-1 bg-border" />
               </div>
-              <p className="mt-2 text-base font-bold text-foreground">{parcelRef}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Land type: {landType}</p>
-            </div>
-
-            {/* Current stage */}
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <Landmark className="size-3.5 text-primary" />
-                Current stage
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <StatusPill tone="progress">{stageLabel}</StatusPill>
-              </div>
-            </div>
-          </div>
-        </Section>
-
-        {/* Case status */}
-        <Section title="Case status" description="Procedural status for your affected land parcel.">
-          <div className="space-y-3">
-            {/* Readiness */}
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <ShieldCheck className="size-3.5 text-primary" />
-                Readiness
-              </div>
-              <p className="mt-2 text-sm font-semibold text-foreground">{readiness}</p>
-            </div>
-            {/* RR Status */}
-            <div className="surface-panel p-4">
-              <p className="text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">RR Status</p>
-              <p className="mt-2 text-sm text-foreground">
-                {caseData.rr ? (
-                  <>
-                    Status: {caseData.rr.status}<br />
-                    Eligible families: {caseData.rr.eligibleFamilies}<br />
-                    Housing allotted: {caseData.rr.housingAllotted}
-                  </>
-                ) : (
-                  "Not available"
-                )}
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                The selected case is currently recorded at the{" "}
+                {getStageDisplayLabel(caseData.currentStage)} stage.
               </p>
             </div>
+          </Section>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <Section title="Latest case information">
+              <div className="surface-panel space-y-4 p-5">
+                <p className="text-sm">
+                  Readiness: <span className="font-semibold">{caseData.readiness}</span>
+                </p>
+                {caseData.hearing ? (
+                  <div className="flex items-start gap-3 border-t border-border pt-4">
+                    <CalendarDays className="mt-0.5 size-4 text-primary" aria-hidden="true" />
+                    <p className="text-sm leading-relaxed">
+                      Hearing {caseData.hearing.status.replace(/_/g, " ")}
+                      {caseData.hearing.scheduledDate
+                        ? ` for ${formatDate(caseData.hearing.scheduledDate)}`
+                        : "; date not recorded"}
+                      .
+                    </p>
+                  </div>
+                ) : (
+                  <p className="border-t border-border pt-4 text-sm text-muted-foreground">
+                    No hearing is currently recorded for this case.
+                  </p>
+                )}
+                {caseData.objections.length > 0 ? (
+                  <p className="border-t border-border pt-4 text-sm">
+                    {caseData.objections.length === 1 ? "Objection" : "Objections"}:{" "}
+                    {caseData.objections
+                      .map((item) => `${item.objectionId} · ${item.status.replace(/_/g, " ")}`)
+                      .join("; ")}
+                    .
+                  </p>
+                ) : null}
+              </div>
+            </Section>
+            <Section
+              title="Case identity / reference"
+              description="Use these references when enquiring about this case."
+            >
+              <dl className="surface-panel grid gap-4 p-5 sm:grid-cols-2">
+                <Detail label="Case reference" value={caseData.id} />
+                <Detail label="Parcel reference" value={presentation?.parcelRef || "Unavailable"} />
+              </dl>
+            </Section>
           </div>
-        </Section>
-      </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              to="/citizen/timeline"
+              search={{ caseId: caseData.id }}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5"
+            >
+              Open case timeline <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+            <Link
+              to="/citizen/hearing"
+              search={{ caseId: caseData.id }}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+            >
+              View hearing <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+          </div>
+        </>
+      ) : null}
     </AppShell>
+  );
+}
+
+function Detail({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-sm font-semibold">{value}</dd>
+    </div>
   );
 }

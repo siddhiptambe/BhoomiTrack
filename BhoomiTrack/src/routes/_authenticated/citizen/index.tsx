@@ -1,310 +1,275 @@
-// Citizen Home page – uses the shared case store (canonical data) and binds the demo party once per session.
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import {
-  AlertTriangle,
-  Bell,
-  Building2,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  Coins,
-  Landmark,
-  MapPin,
-  ShieldCheck,
-  Volume2,
-} from "lucide-react";
-import { requireRole } from "@/lib/route-guards";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, ArrowRight, MapPinned, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
+import { MetricCard, PageHeader, Section } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/ui/status-pill";
-import { useI18n } from "@/lib/i18n";
-import { listSharedCases } from "@/lib/shared-case/case-store";
-import { supabase } from "@/integrations/supabase/client";
-import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
-
-// Typed wrapper for the zero‑argument RPC "bind_demo_party"
-function callBindDemoParty() {
-  // Explicit generic to avoid default any
-  return supabase.rpc<null>("bind_demo_party");
-}
+import { fetchProjectGisData } from "@/lib/gis";
+import type { GeoJsonFeature } from "@/lib/gis";
+import { useCitizenCase, CitizenCaseContext } from "@/lib/shared-case/citizen-case";
+import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
+import { resolveCitizenCasePresentation } from "@/lib/shared-case/citizen-demo-data";
+import { requireRole } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/_authenticated/citizen/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
+  }),
   beforeLoad: () => requireRole("citizen"),
   component: CitizenPortal,
 });
 
-function CitizenPortal() {
-  const { t, lang } = useI18n();
-  const [cases, setCases] = useState<SharedCaseContract[]>([]);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-
-  // Bind the demo party once per session – guard against duplicate calls.
-  useEffect(() => {
-    // The RPC is idempotent; we call it on first render.
-    callBindDemoParty().then(({ error }) => {
-      if (error) console.error("bind_demo_party error:", error);
-    });
-  }, []);
-
-  // Load the canonical cases.
-  useEffect(() => {
-    listSharedCases().then(setCases).catch(console.error);
-  }, []);
-
-  const caseData = cases[0] || {};
-
-  const handleAudioReadout = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (audioPlaying) {
-      window.speechSynthesis.cancel();
-      setAudioPlaying(false);
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(
-      `Your land acquisition case is in the objection window. Check parcel ${caseData.parcelRef ?? ""}, affected area ${caseData.affectedArea ?? ""}.`,
+function featureByParcel(features: GeoJsonFeature[], parcelId: string, parcelRef: string) {
+  return features.find((feature) => {
+    const properties = feature.properties;
+    return (
+      String(properties["id"] ?? "") === parcelId ||
+      (parcelRef !== "" && String(properties["parcel_ref"] ?? "") === parcelRef)
     );
-    utterance.lang = lang === "hi" ? "hi-IN" : lang === "mr" ? "mr-IN" : "en-IN";
-    utterance.onend = () => setAudioPlaying(false);
-    utterance.onerror = () => setAudioPlaying(false);
-    setAudioPlaying(true);
-    window.speechSynthesis.speak(utterance);
+  });
+}
+
+function numericProperty(feature: GeoJsonFeature | undefined, key: string): number | null {
+  const raw = feature?.properties[key];
+  if (raw === null || raw === undefined) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function CitizenPortal() {
+  const navigate = useNavigate({ from: "/citizen" });
+  const { caseId } = Route.useSearch();
+  const query = useCitizenCase();
+  const cases = query.data?.cases ?? [];
+  const caseData = query.data?.selected ?? null;
+  const gisQuery = useQuery({
+    queryKey: ["citizen-parcel-impact", caseData?.project.id, caseData?.parcel.id],
+    enabled: Boolean(caseData?.project.id && caseData.parcel.id),
+    queryFn: () => fetchProjectGisData(caseData!.project.id),
+  });
+
+  const openCase = (selectedId: string) => {
+    void navigate({ to: "/citizen/case", search: { caseId: selectedId } });
   };
+
+  const parcelFeature = caseData
+    ? featureByParcel(
+        gisQuery.data?.parcels.features ?? [],
+        caseData.parcel.id,
+        caseData.parcel.parcelRef,
+      )
+    : undefined;
+  const affectedFeature = caseData
+    ? featureByParcel(
+        gisQuery.data?.affectedParcels.features ?? [],
+        caseData.parcel.id,
+        caseData.parcel.parcelRef,
+      )
+    : undefined;
+  const presentation = caseData
+    ? resolveCitizenCasePresentation(caseData, {
+        affectedAreaSqm:
+          numericProperty(affectedFeature, "affected_area_sqm") ??
+          numericProperty(parcelFeature, "affected_area_sqm"),
+        affectedPercentage:
+          numericProperty(affectedFeature, "affected_percentage") ??
+          numericProperty(parcelFeature, "affected_percentage"),
+      })
+    : null;
+  const recordedArea = presentation?.recordedAreaSqm ?? null;
+  const affectedArea = presentation?.affectedAreaSqm ?? null;
+  const affectedPercent = presentation?.affectedPercentage ?? null;
+  const citizenPartyName = presentation?.citizenPartyName ? "Citizen" : "Unavailable";
+  const portalRelationshipLabel = presentation?.portalRelationshipLabel ?? "Unavailable";
+  const surveyGat = [presentation?.surveyNo, presentation?.gatNo]
+    .filter((value): value is string => Boolean(value))
+    .join(" / ");
+  const location = [presentation?.village, presentation?.district, presentation?.state]
+    .filter((value): value is string => Boolean(value))
+    .join(", ");
 
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
-        title={t("citizen.title")}
-        description={t("citizen.subtitle")}
-        actions={
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-              <Bell className="size-3.5" />
-              Action required
-            </div>
-            <DataClassBadge dataClass="synthetic" />
-          </div>
-        }
+        eyebrow="Citizen portal"
+        title="My Land"
+        description="Your parcel and acquisition case at a glance."
       />
 
-      <div className="mb-6 rounded-xl border border-border bg-gradient-to-r from-card via-card to-secondary/40 p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Welcome, {caseData.titleholderName ?? "Citizen"}
-            </p>
-            <h2 className="mt-1 font-serif text-xl font-bold text-foreground sm:text-2xl">
-              Parcel {caseData.parcelRef ?? ""} · Village {caseData.village ?? ""}
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-              Project:{" "}
-              <span className="font-medium text-foreground">{caseData.projectName ?? ""}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleAudioReadout}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
-            >
-              <Volume2 className={`size-3.5 ${audioPlaying ? "text-primary animate-pulse" : ""}`} />
-              {audioPlaying ? "Stop audio" : "Listen"}
-            </button>
-          </div>
+      {query.isLoading ? (
+        <div className="mt-8 grid gap-4 md:grid-cols-2" aria-label="Loading citizen case">
+          {[0, 1, 2, 3].map((item) => (
+            <div key={item} className="surface-panel h-28 animate-pulse bg-muted" />
+          ))}
         </div>
-      </div>
-
-      {/* What do I need to do now? */}
-      <Section
-        title="What do I need to do now?"
-        description="Plain-language action summary for your current acquisition stage."
-      >
-        <div className="rounded-xl border-2 border-amber-500/80 bg-gradient-to-r from-amber-50/80 via-card to-card p-5 shadow-sm dark:from-amber-950/30 sm:p-6">
-          <div className="flex flex-col justify-between gap-3 border-b border-border/80 pb-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
-                <AlertTriangle className="size-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-amber-800 dark:text-amber-400">
-                    Action now
-                  </span>
-                  <span className="rounded bg-amber-200/80 px-2 py-0.5 font-mono text-[0.68rem] font-bold text-amber-950 dark:bg-amber-900 dark:text-amber-100">
-                    3C
-                  </span>
-                </div>
-                <h3 className="mt-0.5 font-serif text-lg font-bold text-foreground sm:text-xl">
-                  Review and submit your objection before the deadline.
-                </h3>
-              </div>
-            </div>
-            <StatusPill tone="progress">Action required</StatusPill>
+      ) : null}
+      {!query.isLoading && query.error ? (
+        <div
+          className="mt-8 rounded-xl border border-destructive/40 bg-destructive/5 p-5 text-sm text-destructive"
+          role="alert"
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="size-4" aria-hidden="true" />
+            The Citizen case could not be loaded.
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-foreground/90">
-            Your land records and survey details are in the objection window. Check the parcel
-            information, verify the affected area, and submit an objection before the deadline if
-            the details do not match your title or field measurements.
+          <p className="mt-2">
+            {query.error instanceof Error ? query.error.message : "Citizen data is unavailable."}
           </p>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-amber-900 dark:text-amber-300">
-              <CalendarDays className="size-3.5" />
-              Deadline: {caseData.objectionDeadline ?? ""}
-            </div>
-            <div className="rounded-full border border-amber-300 bg-amber-100/80 px-3 py-1 text-xs font-semibold text-amber-900 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-              Current stage: {caseData.currentStage ?? ""}
-            </div>
-          </div>
         </div>
-      </Section>
+      ) : null}
+      {!query.isLoading && !query.error && !caseData ? (
+        <div className="mt-8 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+          {caseId
+            ? `Case ${caseId} is not available to this account.`
+            : cases.length > 1
+              ? "Select a Citizen-visible case from the portal navigation."
+              : "No Citizen-visible case is available."}
+        </div>
+      ) : null}
 
-      {/* Land summary */}
-      <Section
-        title={t("citizen.landSummary")}
-        description="Your recorded parcel, area and status information."
-      >
-        <div className="surface-panel p-5 shadow-sm sm:p-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-secondary/30 p-3.5">
-              <dt className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-                {t("citizen.parcelNumber")}
-              </dt>
-              <dd className="mt-1 font-mono text-base font-bold text-foreground">
-                {caseData.parcelRef ?? ""}
-              </dd>
-              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-                Khata No. {caseData.khataNo ?? ""} · Survey {caseData.surveyNo ?? ""}/
-                {caseData.hissaNo ?? ""}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-secondary/30 p-3.5">
-              <dt className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-                Village / District
-              </dt>
-              <dd className="mt-1 text-base font-bold text-foreground">
-                {caseData.village ?? ""}, {caseData.district ?? ""}
-              </dd>
-              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-                Taluka {caseData.taluka ?? ""}, {caseData.state ?? ""}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-secondary/30 p-3.5">
-              <dt className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-                {t("citizen.totalArea")}
-              </dt>
-              <dd className="mt-1 text-base font-bold text-foreground">
-                {caseData.totalArea ?? ""}
-              </dd>
-              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-                Classification: {caseData.landClassification ?? ""}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Section>
+      {caseData ? (
+        <>
+          <CitizenCaseContext caseData={caseData} />
 
-      {/* Summary tiles */}
-      <Section
-        title="Citizen summary"
-        description="The key facts a landowner should understand immediately."
-      >
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryTile
-            icon={<MapPin className="size-4" />}
-            label="Affected parcel"
-            value={caseData.parcelRef ?? ""}
-          />
-          <SummaryTile
-            icon={<Building2 className="size-4" />}
-            label="Village / district"
-            value={`${caseData.village ?? ""}, ${caseData.district ?? ""}`}
-          />
-          <SummaryTile
-            icon={<Landmark className="size-4" />}
-            label="Land area"
-            value={`${caseData.totalArea ?? ""} total · ${caseData.affectedArea ?? ""} affected`}
-          />
-          <SummaryTile
-            icon={<CheckCircle2 className="size-4" />}
-            label="Current stage"
-            value={caseData.currentStage ?? ""}
-          />
-        </div>
-      </Section>
+          <Section
+            title="Parcel summary"
+            description="The selected case and parcel identity from the shared case record."
+          >
+            <div className="surface-panel flex flex-col justify-between gap-5 p-5 sm:flex-row sm:items-center">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+                  Selected parcel
+                </p>
+                <h2 className="mt-2 break-words font-serif text-2xl font-bold">
+                  {presentation?.parcelRef || "Parcel unavailable"}
+                </h2>
+                <p className="mt-1 text-sm font-medium text-muted-foreground">
+                  {caseData.id} · {caseData.project.projectName || "Project unavailable"}
+                </p>
+                <p className="mt-2 text-sm">
+                  <span className="text-muted-foreground">Recorded landholder: </span>
+                  <span className="font-semibold">
+                    {presentation?.recordedLandholder || "Unavailable"}
+                  </span>
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {caseData.landType || "Land type unavailable"}
+                </p>
+              </div>
+              <Link
+                to="/citizen/case"
+                search={{ caseId: caseData.id }}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
+              >
+                Open case <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </Section>
 
-      {/* How to stay informed */}
-      <Section
-        title="How to stay informed"
-        description="Status indicators that can be visible directly on the dashboard."
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="surface-panel p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <Coins className="size-4" />
-              <h3 className="font-serif text-base font-bold">Compensation status</h3>
+          <Section
+            title="Area impact"
+            description="Recorded and affected areas from the verified parcel assessment, when available."
+          >
+            <div className="grid gap-3 sm:grid-cols-3">
+              <MetricCard
+                label="Recorded area"
+                value={
+                  recordedArea === null
+                    ? "Unavailable"
+                    : `${recordedArea.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`
+                }
+              />
+              <MetricCard
+                label="Affected area"
+                value={
+                  affectedArea === null
+                    ? "Unavailable"
+                    : `${affectedArea.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`
+                }
+              />
+              <MetricCard
+                label="Affected"
+                value={affectedPercent === null ? "Unavailable" : `${affectedPercent.toFixed(1)}%`}
+              />
             </div>
-            <p className="mt-3 text-sm font-medium text-foreground">
-              {caseData.compensationStatus ?? ""}
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Estimated payment will be released only after award determination and bank
-              verification.
-            </p>
+            {!gisQuery.isLoading && (affectedArea === null || affectedPercent === null) ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Some affected-area details are unavailable for this case.
+              </p>
+            ) : null}
+          </Section>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <Section title="Land record">
+              <dl className="surface-panel grid gap-4 p-5 sm:grid-cols-2">
+                <Detail label="Survey / Gat No." value={surveyGat || "Unavailable"} />
+                <Detail label="Land type" value={caseData.landType || "Unavailable"} />
+                <Detail label="Case" value={caseData.id} />
+                <Detail label="Current stage" value={getStageDisplayLabel(caseData.currentStage)} />
+                <Detail
+                  label="Owner reference"
+                  value={presentation?.ownerReference || "Unavailable"}
+                />
+                <Detail
+                  label="Land record"
+                  value={presentation?.landRecordReference ? "Prototype reference" : "Unavailable"}
+                />
+                <Detail label="Location" value={location || "Unavailable"} />
+                <Detail
+                  label="Geometry status"
+                  value={presentation?.geometryStatus || "Unavailable"}
+                />
+              </dl>
+            </Section>
+            <Section title="Case relationship">
+              <div className="surface-panel space-y-4 p-5">
+                <Detail label="Citizen / Party" value={citizenPartyName} />
+                <Detail label="Portal relationship" value={portalRelationshipLabel} />
+                <p className="border-t border-border pt-3 text-sm leading-relaxed text-muted-foreground">
+                  This Citizen access relationship does not by itself establish legal ownership.
+                </p>
+              </div>
+            </Section>
           </div>
-          <div className="surface-panel p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <HeartHandshakeIcon />
-              <h3 className="font-serif text-base font-bold">R&amp;R status</h3>
+
+          <Section title="Current case status">
+            <div className="surface-panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    Readiness
+                  </p>
+                  <p className="mt-1 font-semibold">{caseData.readiness}</p>
+                </div>
+              </div>
+              <StatusPill tone="progress">{getStageDisplayLabel(caseData.currentStage)}</StatusPill>
+              <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPinned className="size-4" aria-hidden="true" />{" "}
+                {presentation?.village || "Village unavailable"}
+              </p>
+              <button
+                type="button"
+                onClick={() => openCase(caseData.id)}
+                className="min-h-11 rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5"
+              >
+                View case details
+              </button>
             </div>
-            <p className="mt-3 text-sm font-medium text-foreground">{caseData.rrStatus ?? ""}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Any rehabilitation or resettlement assistance will be reviewed alongside the land
-              acquisition case.
-            </p>
-          </div>
-          <div className="surface-panel p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <ShieldCheck className="size-4" />
-              <h3 className="font-serif text-base font-bold">Land record status</h3>
-            </div>
-            <p className="mt-3 text-sm font-medium text-foreground">{caseData.dbtStatus ?? ""}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Record details: {caseData.landClassification ?? ""}. Review and verify the land record
-              before the final declaration stage.
-            </p>
-          </div>
-        </div>
-      </Section>
+          </Section>
+        </>
+      ) : null}
     </AppShell>
   );
 }
 
-function SummaryTile({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="surface-panel p-4">
-      <div className="flex items-center gap-2 text-primary">{icon}</div>
-      <p className="mt-3 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
+      </dt>
+      <dd className="mt-1 break-words text-sm font-semibold">{value}</dd>
     </div>
-  );
-}
-
-function HeartHandshakeIcon() {
-  return (
-    <span className="inline-flex size-4 items-center justify-center rounded-sm bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-      ❤
-    </span>
   );
 }

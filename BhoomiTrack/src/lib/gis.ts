@@ -48,7 +48,8 @@ export type ParcelProperties = {
   is_synthetic: boolean;
   affected_area_sqm: number | null;
   affected_percentage: number | null;
-  spatial_status: "candidate_affected" | "unaffected";
+  geometry_status?: string;
+  spatial_status: "candidate_affected" | "pending_analysis" | "analyzed_unaffected" | "unaffected";
 };
 
 export type GisSummary = {
@@ -58,11 +59,22 @@ export type GisSummary = {
   total_affected_area_sqm: number;
 };
 
+export type GisResultSource = {
+  result_id: string;
+  version_ref: string;
+  source_ref: string;
+  source_metadata: Record<string, unknown>;
+  corridor_m: number;
+};
+
 export type GisData = {
   project: GisProject | null;
   alignment: GeoJsonFeatureCollection;
+  engineerPoints: GeoJsonFeatureCollection;
   parcels: GeoJsonFeatureCollection;
+  affectedParcels: GeoJsonFeatureCollection;
   corridor: GeoJsonFeatureCollection;
+  source: GisResultSource | null;
   summary: GisSummary;
 };
 
@@ -70,6 +82,9 @@ export const EMPTY_FEATURE_COLLECTION: GeoJsonFeatureCollection = {
   type: "FeatureCollection",
   features: [],
 };
+
+export const PARCEL_LABEL_ZOOM = 15;
+export const ANALYSIS_CORRIDOR_BUFFER_M = 30;
 
 export type EngineerAlignmentValidation = {
   points: [number, number][];
@@ -80,7 +95,12 @@ export type EngineerAlignmentValidation = {
 };
 
 function isValidCoordinatePair(value: unknown): value is [number, number] {
-  return Array.isArray(value) && value.length === 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    Number.isFinite(value[0]) &&
+    Number.isFinite(value[1])
+  );
 }
 
 function readCrsName(raw: unknown): string {
@@ -132,7 +152,9 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
 
     const coordinates = geometry["coordinates"];
     if (!isValidCoordinatePair(coordinates)) {
-      throw new Error(`Feature ${index + 1} has invalid coordinates. Expected [longitude, latitude].`);
+      throw new Error(
+        `Feature ${index + 1} has invalid coordinates. Expected [longitude, latitude].`,
+      );
     }
 
     const [longitude, latitude] = coordinates as [number, number];
@@ -144,9 +166,8 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
     }
 
     const properties = item["properties"] as Record<string, unknown> | undefined;
-    const rawPointOrder = properties && typeof properties === "object"
-      ? properties["point_order"]
-      : undefined;
+    const rawPointOrder =
+      properties && typeof properties === "object" ? properties["point_order"] : undefined;
 
     const pointOrder = Number(rawPointOrder ?? index + 1);
     if (!Number.isFinite(pointOrder)) {
@@ -193,7 +214,8 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
   };
 
   const line = turf.lineString(points);
-  const corridor = turf.buffer(line, 12, { units: "meters" });
+  const corridor = turf.buffer(line, ANALYSIS_CORRIDOR_BUFFER_M, { units: "meters" });
+  if (!corridor) throw new Error("Unable to construct the engineer analysis corridor.");
   const alignedCorridor: GeoJsonFeatureCollection = {
     type: "FeatureCollection",
     features: [
@@ -201,7 +223,7 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
         type: "Feature",
         geometry: corridor.geometry as GeoJsonGeometry,
         properties: {
-          buffer_m: 12,
+          buffer_m: ANALYSIS_CORRIDOR_BUFFER_M,
           source: "engineer_upload",
         },
       },
@@ -211,7 +233,7 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
   return {
     points,
     alignment,
-    engineerPoints,
+    engineerPoints: EMPTY_FEATURE_COLLECTION,
     corridor: alignedCorridor,
     lengthKm: turf.length(line, { units: "kilometers" }),
   };
@@ -219,40 +241,42 @@ export function validateEngineerGeoJson(input: unknown): EngineerAlignmentValida
 
 export function getDefaultDemoGisData(): GisData {
   const points: [number, number][] = [
-    [73.7600, 18.5200],
-    [73.7650, 18.5210],
-    [73.7710, 18.5215],
-    [73.7770, 18.5210],
-    [73.7820, 18.5220],
-    [73.7860, 18.5250],
-    [73.7880, 18.5290],
-    [73.7870, 18.5330],
-    [73.7840, 18.5370],
-    [73.7800, 18.5410],
-    [73.7780, 18.5460],
-    [73.7790, 18.5510],
-    [73.7820, 18.5550],
-    [73.7880, 18.5570],
-    [73.7940, 18.5570],
-    [73.8000, 18.5550],
-    [73.8060, 18.5520],
-    [73.8120, 18.5510],
-    [73.8180, 18.5520],
-    [73.8230, 18.5550],
-    [73.8270, 18.5590],
-    [73.8290, 18.5640],
-    [73.8300, 18.5690],
-    [73.8320, 18.5730],
-    [73.8360, 18.5760],
+    [73.76, 18.52],
+    [73.765, 18.521],
+    [73.771, 18.5215],
+    [73.777, 18.521],
+    [73.782, 18.522],
+    [73.786, 18.525],
+    [73.788, 18.529],
+    [73.787, 18.533],
+    [73.784, 18.537],
+    [73.78, 18.541],
+    [73.778, 18.546],
+    [73.779, 18.551],
+    [73.782, 18.555],
+    [73.788, 18.557],
+    [73.794, 18.557],
+    [73.8, 18.555],
+    [73.806, 18.552],
+    [73.812, 18.551],
+    [73.818, 18.552],
+    [73.823, 18.555],
+    [73.827, 18.559],
+    [73.829, 18.564],
+    [73.83, 18.569],
+    [73.832, 18.573],
+    [73.836, 18.576],
   ];
 
   const alignment: GeoJsonFeatureCollection = {
     type: "FeatureCollection",
-    features: [{
-      type: "Feature",
-      geometry: { type: "LineString", coordinates: points },
-      properties: { source: "demo_seed", name: "Mumbai–Pune demo alignment" },
-    }],
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: points },
+        properties: { source: "demo_seed", name: "Mumbai–Pune demo alignment" },
+      },
+    ],
   };
 
   const parcels: GeoJsonFeatureCollection = {
@@ -262,13 +286,15 @@ export function getDefaultDemoGisData(): GisData {
         type: "Feature",
         geometry: {
           type: "Polygon",
-          coordinates: [[
-            [73.7650, 18.5180],
-            [73.7750, 18.5180],
-            [73.7750, 18.5250],
-            [73.7650, 18.5250],
-            [73.7650, 18.5180],
-          ]],
+          coordinates: [
+            [
+              [73.765, 18.518],
+              [73.775, 18.518],
+              [73.775, 18.525],
+              [73.765, 18.525],
+              [73.765, 18.518],
+            ],
+          ],
         },
         properties: {
           id: "DEMO-PCL-001",
@@ -290,13 +316,15 @@ export function getDefaultDemoGisData(): GisData {
         type: "Feature",
         geometry: {
           type: "Polygon",
-          coordinates: [[
-            [73.7800, 18.5320],
-            [73.7900, 18.5320],
-            [73.7900, 18.5400],
-            [73.7800, 18.5400],
-            [73.7800, 18.5320],
-          ]],
+          coordinates: [
+            [
+              [73.78, 18.532],
+              [73.79, 18.532],
+              [73.79, 18.54],
+              [73.78, 18.54],
+              [73.78, 18.532],
+            ],
+          ],
         },
         properties: {
           id: "DEMO-PCL-002",
@@ -318,13 +346,15 @@ export function getDefaultDemoGisData(): GisData {
         type: "Feature",
         geometry: {
           type: "Polygon",
-          coordinates: [[
-            [73.7950, 18.5400],
-            [73.8050, 18.5400],
-            [73.8050, 18.5500],
-            [73.7950, 18.5500],
-            [73.7950, 18.5400],
-          ]],
+          coordinates: [
+            [
+              [73.795, 18.54],
+              [73.805, 18.54],
+              [73.805, 18.55],
+              [73.795, 18.55],
+              [73.795, 18.54],
+            ],
+          ],
         },
         properties: {
           id: "DEMO-PCL-003",
@@ -346,13 +376,15 @@ export function getDefaultDemoGisData(): GisData {
         type: "Feature",
         geometry: {
           type: "Polygon",
-          coordinates: [[
-            [73.8150, 18.5550],
-            [73.8250, 18.5550],
-            [73.8250, 18.5650],
-            [73.8150, 18.5650],
-            [73.8150, 18.5550],
-          ]],
+          coordinates: [
+            [
+              [73.815, 18.555],
+              [73.825, 18.555],
+              [73.825, 18.565],
+              [73.815, 18.565],
+              [73.815, 18.555],
+            ],
+          ],
         },
         properties: {
           id: "DEMO-PCL-004",
@@ -374,12 +406,14 @@ export function getDefaultDemoGisData(): GisData {
         type: "Feature",
         geometry: {
           type: "Polygon",
-          coordinates: [[
-            [73.8380, 18.5825],
-            [73.8410, 18.5835],
-            [73.8390, 18.5855],
-            [73.8380, 18.5825],
-          ]],
+          coordinates: [
+            [
+              [73.838, 18.5825],
+              [73.841, 18.5835],
+              [73.839, 18.5855],
+              [73.838, 18.5825],
+            ],
+          ],
         },
         properties: {
           id: "DEMO-PCL-005",
@@ -401,6 +435,7 @@ export function getDefaultDemoGisData(): GisData {
   };
 
   const corridor = turf.buffer(turf.lineString(points), 12, { units: "meters" });
+  if (!corridor) throw new Error("Unable to construct the demo analysis corridor.");
 
   const affected = parcels.features.filter((feature) => {
     try {
@@ -423,7 +458,7 @@ export function getDefaultDemoGisData(): GisData {
   return {
     project: {
       id: "demo-project",
-      project_code: "A-WARD-MH-001",
+      project_code: "DEMO-MH-001",
       project_name: "Mumbai–Pune Infrastructure Corridor",
       state: "Maharashtra",
       districts: ["Pune", "Raigad"],
@@ -431,15 +466,20 @@ export function getDefaultDemoGisData(): GisData {
       is_synthetic: true,
     },
     alignment,
+    engineerPoints: EMPTY_FEATURE_COLLECTION,
     parcels,
+    affectedParcels: EMPTY_FEATURE_COLLECTION,
     corridor: {
       type: "FeatureCollection",
-      features: [{
-        type: "Feature",
-        geometry: corridor.geometry as GeoJsonGeometry,
-        properties: { buffer_m: 12, source: "demo_seed" },
-      }],
+      features: [
+        {
+          type: "Feature",
+          geometry: corridor.geometry as GeoJsonGeometry,
+          properties: { buffer_m: 12, source: "demo_seed" },
+        },
+      ],
     },
+    source: null,
     summary: {
       alignment_length_km: turf.length(turf.lineString(points), { units: "kilometers" }),
       parcels_displayed: parcels.features.length,
@@ -449,37 +489,138 @@ export function getDefaultDemoGisData(): GisData {
   };
 }
 
-function getIntersectionAreaSqm(feature: GeoJsonFeature, corridor: turf.Feature<turf.Geometry>): number {
-  // If affected_area_sqm is provided in the feature properties, use it directly
-  const properties = feature.properties as Record<string, unknown> | undefined;
-  if (properties) {
-    const providedArea = properties["affected_area_sqm"];
-    if (typeof providedArea === "number" && providedArea >= 0) {
-      return providedArea;
-    }
-  }
-
+export function getIntersectionAreaSqm(
+  feature: GeoJsonFeature,
+  corridor: { type: "Feature"; geometry: GeoJsonGeometry },
+): number {
   try {
-    const intersection = turf.intersect(feature as never, corridor as never);
+    const intersection = turf.intersect(
+      turf.featureCollection([feature as never, corridor as never]),
+    );
     if (!intersection) return 0;
-
-    const area = turf.area(intersection);
-    // If area is valid and positive, return it
-    if (area > 0) return area;
-
-    // If intersection exists but area is 0 (line/point contact), try length-based fallback
-    try {
-      const length = turf.length(intersection, { units: "meters" });
-      // Convert length to approximate area using corridor buffer (12m on each side = 24m width)
-      const approximateArea = Math.max(length * 24, 100);
-      return approximateArea;
-    } catch {
-      // If even length fails, return minimum impact area
-      return 100;
-    }
+    const area = calculateProjectedGeometryAreaSqm(intersection.geometry as GeoJsonGeometry);
+    return Number.isFinite(area) && area > 0 ? area : 0;
   } catch {
     return 0;
   }
+}
+
+const UTM43N_FALSE_EASTING_M = 500000;
+const UTM43N_SCALE = 0.9996;
+const UTM43N_CENTRAL_MERIDIAN_DEGREES = 75;
+type Position = [number, number];
+
+function projectWgs84ToUtm43North([longitude, latitude]: Position): Position {
+  const radians = Math.PI / 180;
+  const lat = latitude * radians;
+  const lon = longitude * radians;
+  const centralMeridian = UTM43N_CENTRAL_MERIDIAN_DEGREES * radians;
+  const semiMajor = 6378137;
+  const flattening = 1 / 298.257223563;
+  const eccentricitySquared = flattening * (2 - flattening);
+  const secondEccentricitySquared = eccentricitySquared / (1 - eccentricitySquared);
+  const sinLat = Math.sin(lat);
+  const cosLat = Math.cos(lat);
+  const tanLat = Math.tan(lat);
+  const radiusPrimeVertical = semiMajor / Math.sqrt(1 - eccentricitySquared * sinLat ** 2);
+  const radiusMeridian =
+    (semiMajor * (1 - eccentricitySquared)) / (1 - eccentricitySquared * sinLat ** 2) ** 1.5;
+  const t = tanLat ** 2;
+  const c = secondEccentricitySquared * cosLat ** 2;
+  const a = cosLat * (lon - centralMeridian);
+  const e4 = eccentricitySquared ** 2;
+  const e6 = eccentricitySquared ** 3;
+  const meridianArc =
+    radiusMeridian *
+    (lat * (1 - eccentricitySquared / 4 - (3 * e4) / 64 - (5 * e6) / 256) -
+      ((3 * eccentricitySquared) / 8 + (3 * e4) / 32 + (45 * e6) / 1024) * Math.sin(2 * lat) +
+      ((15 * e4) / 256 + (45 * e6) / 1024) * Math.sin(4 * lat) -
+      ((35 * e6) / 3072) * Math.sin(6 * lat));
+  return [
+    UTM43N_FALSE_EASTING_M +
+      UTM43N_SCALE *
+        radiusPrimeVertical *
+        (a + ((1 - t + c) * a ** 3) / 6 + ((5 - 18 * t + t ** 2 + 72 * c) * a ** 5) / 120),
+    UTM43N_SCALE *
+      (meridianArc +
+        radiusPrimeVertical * tanLat * (a ** 2 / 2 + ((5 - t + 9 * c + 4 * c ** 2) * a ** 4) / 24)),
+  ];
+}
+
+function ringAreaSqm(ring: unknown): number {
+  if (!Array.isArray(ring) || ring.length < 4) return 0;
+  const projected = ring
+    .filter((position): position is Position => Array.isArray(position) && position.length >= 2)
+    .map(([longitude, latitude]) => projectWgs84ToUtm43North([longitude, latitude]));
+  let area = 0;
+  for (let index = 0; index < projected.length - 1; index += 1) {
+    const left = projected[index];
+    const right = projected[index + 1];
+    if (!left || !right) continue;
+    area += left[0] * right[1] - right[0] * left[1];
+  }
+  return Math.abs(area) / 2;
+}
+
+export function calculateProjectedGeometryAreaSqm(geometry: GeoJsonGeometry): number {
+  if (!geometry || !["Polygon", "MultiPolygon"].includes(geometry.type)) return 0;
+  const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  if (!Array.isArray(polygons)) return 0;
+  return polygons.reduce<number>((total, polygon) => {
+    if (!Array.isArray(polygon)) return total;
+    const [outer, ...holes] = polygon as unknown[];
+    const holeArea = holes.reduce<number>((sum, hole) => sum + ringAreaSqm(hole), 0);
+    return total + Math.max(0, ringAreaSqm(outer) - holeArea);
+  }, 0);
+}
+
+export type ParcelAreaAudit = {
+  checked: number;
+  validGeometry: number;
+  emptyGeometry: number;
+  invalidGeometry: number;
+  missingOrNonPositiveArea: number;
+  materialMismatches: Array<{ parcelRef: string; storedSqm: number; derivedSqm: number }>;
+};
+
+export function auditParcelAreas(
+  parcels: GeoJsonFeatureCollection,
+  toleranceSqm = 0.1,
+): ParcelAreaAudit {
+  const result: ParcelAreaAudit = {
+    checked: parcels.features.length,
+    validGeometry: 0,
+    emptyGeometry: 0,
+    invalidGeometry: 0,
+    missingOrNonPositiveArea: 0,
+    materialMismatches: [],
+  };
+  for (const feature of parcels.features) {
+    if (!feature.geometry || !feature.geometry.coordinates) {
+      result.emptyGeometry += 1;
+      continue;
+    }
+    const derivedSqm = calculateProjectedGeometryAreaSqm(feature.geometry);
+    if (!Number.isFinite(derivedSqm) || derivedSqm <= 0) {
+      result.invalidGeometry += 1;
+      continue;
+    }
+    result.validGeometry += 1;
+    const storedSqm = Number(feature.properties["total_area_sqm"] ?? 0);
+    if (!Number.isFinite(storedSqm) || storedSqm <= 0) {
+      result.missingOrNonPositiveArea += 1;
+      continue;
+    }
+    const tolerance = Math.max(toleranceSqm, derivedSqm * 0.0001);
+    if (Math.abs(storedSqm - derivedSqm) > tolerance) {
+      result.materialMismatches.push({
+        parcelRef: String(feature.properties["parcel_ref"] ?? ""),
+        storedSqm,
+        derivedSqm,
+      });
+    }
+  }
+  return result;
 }
 
 export function buildAlignmentImpact(
@@ -498,7 +639,11 @@ export function buildAlignmentImpact(
       corridor: EMPTY_FEATURE_COLLECTION,
       affectedIds: new Set(),
       parcelAffectedAreaMap: new Map(),
-      summary: { affectedCount: 0, totalAffectedAreaSqm: 0, totalParcelsDisplayed: parcels.features.length },
+      summary: {
+        affectedCount: 0,
+        totalAffectedAreaSqm: 0,
+        totalParcelsDisplayed: parcels.features.length,
+      },
     };
   }
 
@@ -509,24 +654,70 @@ export function buildAlignmentImpact(
       corridor: EMPTY_FEATURE_COLLECTION,
       affectedIds: new Set(),
       parcelAffectedAreaMap: new Map(),
-      summary: { affectedCount: 0, totalAffectedAreaSqm: 0, totalParcelsDisplayed: parcels.features.length },
+      summary: {
+        affectedCount: 0,
+        totalAffectedAreaSqm: 0,
+        totalParcelsDisplayed: parcels.features.length,
+      },
     };
   }
 
-  const corridor = turf.buffer(turf.lineString(lineGeometry.coordinates as [number, number][]), 12, {
-    units: "meters",
-  });
+  const corridor = turf.buffer(
+    turf.lineString(lineGeometry.coordinates as [number, number][]),
+    ANALYSIS_CORRIDOR_BUFFER_M,
+    {
+      units: "meters",
+    },
+  );
+  if (!corridor) {
+    return {
+      affectedParcels: EMPTY_FEATURE_COLLECTION,
+      corridor: EMPTY_FEATURE_COLLECTION,
+      affectedIds: new Set(),
+      parcelAffectedAreaMap: new Map(),
+      summary: {
+        affectedCount: 0,
+        totalAffectedAreaSqm: 0,
+        totalParcelsDisplayed: parcels.features.length,
+      },
+    };
+  }
 
-  const affectedFeatures = parcels.features.filter((feature) => {
+  const parcelAreas = parcels.features.map((feature) => {
     const geometry = feature.geometry as Record<string, unknown>;
-    if (!geometry || geometry["type"] === "Point") return false;
+    if (!geometry || geometry["type"] === "Point") return { feature, area: 0 };
 
     try {
-      return turf.booleanIntersects(feature as never, corridor as never);
+      return { feature, area: getIntersectionAreaSqm(feature, corridor as never) };
     } catch {
-      return false;
+      return { feature, area: 0 };
     }
   });
+
+  const affectedFeatures = parcelAreas
+    .filter(({ area }) => area > 0)
+    .sort(({ feature: left }, { feature: right }) =>
+      String(left.properties["parcel_ref"] ?? "").localeCompare(
+        String(right.properties["parcel_ref"] ?? ""),
+      ),
+    )
+    .map(({ feature, area }) => {
+      const recordedArea = Number(feature.properties["total_area_sqm"]);
+      const percentageDenominator =
+        Number.isFinite(recordedArea) && recordedArea > 0
+          ? recordedArea
+          : calculateProjectedGeometryAreaSqm(feature.geometry);
+      return {
+        ...feature,
+        properties: {
+          ...feature.properties,
+          affected_area_sqm: area,
+          affected_percentage: calculateAffectedPercentage(area, percentageDenominator),
+          spatial_status: "candidate_affected",
+          geometry_status: "valid",
+        },
+      } as GeoJsonFeature;
+    });
 
   const corridorFeatureCollection: GeoJsonFeatureCollection = {
     type: "FeatureCollection",
@@ -535,7 +726,7 @@ export function buildAlignmentImpact(
         type: "Feature",
         geometry: corridor.geometry as GeoJsonGeometry,
         properties: {
-          buffer_m: 12,
+          buffer_m: ANALYSIS_CORRIDOR_BUFFER_M,
           source: "engineer_upload",
         },
       },
@@ -543,14 +734,16 @@ export function buildAlignmentImpact(
   };
 
   const affectedIds = new Set(
-    affectedFeatures.map((feature) => String((feature.properties["id"] as string | undefined) ?? "")),
+    affectedFeatures.map((feature) =>
+      String((feature.properties["id"] as string | undefined) ?? ""),
+    ),
   );
 
   const parcelAffectedAreaMap = new Map<string, number>();
   let totalAffectedAreaSqm = 0;
   for (const feature of affectedFeatures) {
     const parcelId = String((feature.properties["id"] as string | undefined) ?? "");
-    const areaForParcel = getIntersectionAreaSqm(feature, corridor);
+    const areaForParcel = Number(feature.properties["affected_area_sqm"] ?? 0);
     parcelAffectedAreaMap.set(parcelId, areaForParcel);
     totalAffectedAreaSqm += areaForParcel;
   }
@@ -571,9 +764,7 @@ export function buildAlignmentImpact(
   };
 }
 
-export async function fetchProjectGisData(
-  projectId: string,
-): Promise<GisData> {
+export async function fetchProjectGisData(projectId: string): Promise<GisData> {
   const { data, error } = await supabase.rpc("get_project_gis_data", {
     p_project_id: projectId,
   });
@@ -582,12 +773,50 @@ export async function fetchProjectGisData(
     throw new Error(`GIS data unavailable: ${error.message}`);
   }
 
-  const raw = (data ?? {}) as unknown as Partial<GisData>;
+  const raw = (data ?? {}) as unknown as Partial<GisData> & {
+    summary?:
+      | (Partial<GisSummary> & {
+          affectedCount?: number;
+          totalAffectedAreaSqm?: number;
+          totalParcelsDisplayed?: number;
+        })
+      | null;
+  };
   return {
     project: raw.project ?? null,
     alignment: raw.alignment ?? EMPTY_FEATURE_COLLECTION,
+    engineerPoints: raw.engineerPoints ?? EMPTY_FEATURE_COLLECTION,
     parcels: raw.parcels ?? EMPTY_FEATURE_COLLECTION,
+    affectedParcels: raw.affectedParcels ?? EMPTY_FEATURE_COLLECTION,
     corridor: raw.corridor ?? EMPTY_FEATURE_COLLECTION,
+    source: raw.source ?? null,
+    summary: {
+      alignment_length_km: raw.summary?.alignment_length_km ?? 0,
+      parcels_displayed: raw.summary?.parcels_displayed ?? raw.summary?.totalParcelsDisplayed ?? 0,
+      candidate_affected: raw.summary?.candidate_affected ?? raw.summary?.affectedCount ?? 0,
+      total_affected_area_sqm:
+        raw.summary?.total_affected_area_sqm ?? raw.summary?.totalAffectedAreaSqm ?? 0,
+    },
+  };
+}
+
+export async function fetchProjectGisBaselineData(projectId: string): Promise<GisData> {
+  const { data, error } = await supabase.rpc(
+    "get_project_gis_baseline" as never,
+    {
+      p_project_id: projectId,
+    } as never,
+  );
+  if (error) throw new Error(`GIS baseline unavailable: ${error.message}`);
+  const raw = (data ?? {}) as unknown as Partial<GisData>;
+  return {
+    project: raw.project ?? null,
+    alignment: EMPTY_FEATURE_COLLECTION,
+    engineerPoints: EMPTY_FEATURE_COLLECTION,
+    parcels: raw.parcels ?? EMPTY_FEATURE_COLLECTION,
+    affectedParcels: EMPTY_FEATURE_COLLECTION,
+    corridor: EMPTY_FEATURE_COLLECTION,
+    source: null,
     summary: raw.summary ?? {
       alignment_length_km: 0,
       parcels_displayed: 0,
@@ -597,22 +826,46 @@ export async function fetchProjectGisData(
   };
 }
 
-export async function fetchDemoProjectId(): Promise<string | null> {
+export async function publishProjectGisResult(
+  projectId: string,
+  sourceRef: string,
+  result: EngineerAlignmentValidation,
+  parcels: GeoJsonFeatureCollection,
+  impact: ReturnType<typeof buildAlignmentImpact>,
+) {
+  const { data, error } = await supabase.rpc(
+    "publish_project_gis_result" as never,
+    {
+      p_project_id: projectId,
+      p_version_ref: "active-uploaded-demo",
+      p_source_ref: sourceRef,
+      p_source_metadata: { source: "engineer_upload", point_count: result.points.length },
+      p_parcels: parcels,
+      p_affected_parcels: impact.affectedParcels,
+      p_alignment: result.alignment,
+      p_engineer_points: result.engineerPoints,
+      p_corridor: result.corridor,
+      p_summary: { ...impact.summary, alignment_length_km: result.lengthKm },
+    } as never,
+  );
+  if (error) throw new Error(`GIS result publish failed: ${error.message}`);
+  return data as string;
+}
+
+export async function fetchBaselineProjectId(): Promise<string | null> {
   const { data, error } = await supabase
     .from("projects")
     .select("id")
     .eq("project_code", "A-WARD-MH-001")
     .maybeSingle();
-
-  if (error || !data) return null;
-
+  if (error) throw error;
+  if (!data) return null;
   return data.id;
 }
 
 export function formatArea(sqm: number | null | undefined): string {
   if (sqm === null || sqm === undefined) return "—";
-  if (sqm >= 10_000) return `${(sqm / 10_000).toFixed(2)} ha`;
-  return `${Math.round(sqm).toLocaleString("en-IN")} m²`;
+  return `${sqm.toFixed(2)} m²`;
 }
 
 export function formatPercent(value: number | null | undefined): string {
@@ -620,7 +873,10 @@ export function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
-export function calculateAffectedPercentage(affectedAreaSqm: number, totalAreaSqm: number | null | undefined): number {
+export function calculateAffectedPercentage(
+  affectedAreaSqm: number,
+  totalAreaSqm: number | null | undefined,
+): number {
   if (!totalAreaSqm || totalAreaSqm <= 0) return 0;
   return (affectedAreaSqm / totalAreaSqm) * 100;
 }
@@ -645,9 +901,7 @@ export type OwnershipInterest = {
  * Uses the existing anon/publishable Supabase client — RLS applies.
  * Returns records ordered: owner first, co_owner after.
  */
-export async function fetchParcelOwnership(
-  parcelId: string,
-): Promise<OwnershipInterest[]> {
+export async function fetchParcelOwnership(parcelId: string): Promise<OwnershipInterest[]> {
   const { data, error } = await supabase
     .from("land_interests")
     .select(
@@ -698,11 +952,7 @@ export async function fetchParcelOwnership(
  * Format a share fraction (numerator / denominator) as a percentage string.
  * e.g. 1/2 → "50.00%", 1/3 → "33.33%", 1/1 → "100.00%"
  */
-export function formatShare(
-  numerator: number | null,
-  denominator: number | null,
-): string {
-  if (numerator === null || denominator === null || denominator === 0)
-    return "—";
+export function formatShare(numerator: number | null, denominator: number | null): string {
+  if (numerator === null || denominator === null || denominator === 0) return "—";
   return `${((numerator / denominator) * 100).toFixed(2)}%`;
 }

@@ -32,6 +32,7 @@ export function AppShell({
 
   const currentRole = portal || role;
   const currentDept = department || contextDepartment;
+  const isCitizenPortal = currentRole === "citizen";
 
   let contextLabel = "";
   if (currentRole === "officer" && currentDept) {
@@ -39,8 +40,8 @@ export function AppShell({
     if (agency) {
       contextLabel += ` · ${AGENCY_META[agency].label}`;
     }
-  } else if (currentRole === "citizen") {
-    contextLabel = "Citizen / Landowner";
+  } else if (isCitizenPortal) {
+    contextLabel = "Citizen";
   } else if (currentRole === "ministry") {
     contextLabel = "Ministry / Program Oversight";
   }
@@ -68,10 +69,10 @@ export function AppShell({
           Demo mode
         </span>
         <span className="font-semibold uppercase tracking-wide">
-          {contextLabel ? contextLabel : "Synthetic / representative data"}
+          {contextLabel ? contextLabel : "Prototype / representative data"}
         </span>
         <span className="mx-2 opacity-40">|</span>
-        {t("banner.prototype")}
+        {t(isCitizenPortal ? "banner.citizenPrototype" : "banner.prototype")}
       </div>
 
       <div className="flex w-full flex-1 items-start">

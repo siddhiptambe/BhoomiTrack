@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
 import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
 
@@ -39,11 +40,14 @@ function RRDashboard() {
     .filter((c): c is SharedCaseContract => !!c.rr)
     .map((c) => ({
       id: c.id,
-      caseNo: c.id,
-      parcelCode: c.parcel.parcelRef,
-      khasraNo: c.parcel.parcelRef,
-      village: c.parcel.village,
+      caseId: c.id,
+      projectCode: c.project.projectCode,
       projectName: c.project.projectName,
+      parcelRef: c.parcel.parcelRef,
+      surveyNo: c.parcel.surveyNo,
+      gatNo: c.parcel.gatNo,
+      khasraNo: c.parcel.khasraNo,
+      village: c.parcel.village,
       affectedFamilies: c.rr!.eligibleFamilies,
       housingAllottedCount: c.rr!.housingAllotted,
       status: c.rr!.status,
@@ -144,6 +148,9 @@ function RRDashboard() {
       >
         <div className="space-y-3">
           {isLoading && <p className="text-sm text-muted-foreground">Loading cases...</p>}
+          <p className="text-xs text-muted-foreground">
+            R&amp;R counts and statuses below are synthetic adapter context.
+          </p>
 
           {rrCases.map((item) => (
             <div
@@ -153,14 +160,19 @@ function RRDashboard() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-primary">
-                    {item.caseNo}
+                    {item.caseId}
                   </span>
                   <span className="text-xs text-muted-foreground">·</span>
                   <span className="text-xs text-muted-foreground">
-                    {item.parcelCode} · Khasra {item.khasraNo} ({item.village})
+                    Parcel: {item.parcelRef || "Unavailable"} · Survey:{" "}
+                    {item.surveyNo || "Unavailable"} · Gat: {item.gatNo || "Unavailable"} · Khasra:{" "}
+                    {item.khasraNo || "Unavailable"} ({item.village})
                   </span>
                 </div>
-                <p className="mt-1 text-sm font-semibold text-foreground">{item.projectName}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {item.projectCode || "Project code unavailable"} ·{" "}
+                  {item.projectName || "Project name unavailable"}
+                </p>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   <span>
                     Affected: <strong className="text-foreground">{item.affectedFamilies}</strong>
@@ -189,12 +201,13 @@ function RRDashboard() {
                 >
                   {item.status.replace(/_/g, " ")}
                 </StatusPill>
-                <a
-                  href="/officer/rr/families"
+                <Link
+                  to="/officer/rr/families"
+                  search={{ caseId: item.caseId }}
                   className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80"
                 >
                   Update R&R <ArrowRight className="size-3.5" />
-                </a>
+                </Link>
               </div>
             </div>
           ))}

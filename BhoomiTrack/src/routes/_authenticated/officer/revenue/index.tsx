@@ -1,8 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, Section, MetricCard } from "@/components/layout/PageHeader";
+import { MetricCard, PageHeader, Section } from "@/components/layout/PageHeader";
 import { DataClassBadge } from "@/components/layout/DataClassBadge";
-import { StatusPill } from "@/components/ui/status-pill";
+import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
 
 export const Route = createFileRoute("/_authenticated/officer/revenue/")({
   head: () => ({
@@ -11,7 +12,7 @@ export const Route = createFileRoute("/_authenticated/officer/revenue/")({
       {
         name: "description",
         content:
-          "Land Acquisition Officer dashboard: intake, scrutiny, notifications, objections, and award declaration.",
+          "Land Acquisition Officer dashboard for acquisition cases and supported workflow context.",
       },
     ],
   }),
@@ -19,37 +20,86 @@ export const Route = createFileRoute("/_authenticated/officer/revenue/")({
 });
 
 function RevenueDashboard() {
+  const {
+    data: cases = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: caseQueryKeys.list(),
+    queryFn: listSharedCases,
+  });
+  const objectionCount = cases.reduce((count, caseItem) => count + caseItem.objections.length, 0);
+  const casesWithAwardContext = cases.filter((caseItem) => caseItem.award !== null).length;
+
   return (
     <AppShell portal="officer" department="land_acquisition">
       <PageHeader
         eyebrow="Land Acquisition · Officer Portal"
         title="Land Acquisition Console"
-        description="Case intake, proposal scrutiny, statutory notifications, objection hearings, and compensation award declaration."
+        description="Acquisition case identity and workflow context from the shared case store."
         actions={<DataClassBadge dataClass="synthetic" />}
       />
 
-      <Section title="Department metrics" description="Operational overview for active project alignments.">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Active cases" value="12" note="Under land acquisition jurisdiction" />
-          <MetricCard label="Pending scrutiny" value="4" note="Awaiting identification review" />
-          <MetricCard label="Open objections" value="8" note="Scheduled for hearings" />
-          <MetricCard label="Awards declared" value="15" note="Ready for Treasury payment" />
+      <Section
+        title="Case context"
+        description="Counts reflect cases visible to this session and adapter-backed demo context where noted."
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <MetricCard
+            label="Cases available"
+            value={isLoading ? "…" : isError ? "Unavailable" : String(cases.length)}
+          />
+          <MetricCard
+            label="Demo objection entries"
+            value={isLoading ? "…" : isError ? "Unavailable" : String(objectionCount)}
+            note="Synthetic adapter context"
+          />
+          <MetricCard
+            label="Cases with demo award context"
+            value={isLoading ? "…" : isError ? "Unavailable" : String(casesWithAwardContext)}
+            note="Synthetic adapter context"
+          />
         </div>
       </Section>
 
-      <Section title="Today's acquisition priorities" description="Cases requiring immediate statutory scrutiny or hearing actions.">
+      <Section
+        title="Acquisition cases"
+        description="Canonical case, project, and parcel identity."
+      >
+        {isLoading ? <p className="text-sm text-muted-foreground">Loading shared cases…</p> : null}
+        {isError ? (
+          <p className="text-sm text-destructive">Shared case data is unavailable.</p>
+        ) : null}
+        {!isLoading && !isError && cases.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No cases are available to this session.</p>
+        ) : null}
         <div className="space-y-3">
-          <div className="surface-panel flex flex-col justify-between gap-4 p-4 sm:flex-row sm:items-center">
-            <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">CASE-104</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">National Highway widening — Village 4</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Current stage: scrutiny · Method: RFCTLARR</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusPill tone="issue">High priority</StatusPill>
-              <a href="/officer/revenue/cases" className="inline-flex rounded-md bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground">Manage case</a>
-            </div>
-          </div>
+          {cases.map((caseItem) => (
+            <article
+              key={caseItem.id}
+              className="surface-panel flex flex-col justify-between gap-3 p-4 sm:flex-row sm:items-center"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                  {caseItem.id}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {caseItem.project.projectCode || "Project code unavailable"} ·{" "}
+                  {caseItem.project.projectName || "Project name unavailable"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {caseItem.parcel.parcelRef || "Parcel reference unavailable"} ·{" "}
+                  {caseItem.parcel.village || "Village unavailable"}
+                </p>
+              </div>
+              <Link
+                to="/officer/revenue/cases"
+                className="inline-flex shrink-0 rounded-md bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground"
+              >
+                Open case register
+              </Link>
+            </article>
+          ))}
         </div>
       </Section>
     </AppShell>

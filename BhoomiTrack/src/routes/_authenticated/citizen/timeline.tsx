@@ -1,67 +1,180 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock3, MapPinned } from "lucide-react";
+import { CalendarDays, CircleDot, Clock3, Flag } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
-import { CITIZEN_TIMELINE } from "@/lib/demo-data";
+import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
+import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
+import {
+  CitizenCaseContext,
+  CitizenCaseState,
+  useCitizenCase,
+} from "@/lib/shared-case/citizen-case";
 
 export const Route = createFileRoute("/_authenticated/citizen/timeline")({
-  head: () => ({
-    meta: [
-      { title: "Timeline — Citizen Portal" },
-      {
-        name: "description",
-        content: "Acquisition timeline with completed, current and upcoming stages.",
-      },
-    ],
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
   }),
-  component: CitizenTimelinePage,
+  component: Page,
 });
 
-function CitizenTimelinePage() {
+type CaseActivity = {
+  key: string;
+  date: string | null;
+  title: string;
+  description: string;
+  source: string;
+  status: string;
+  kind: "recorded" | "upcoming";
+};
+
+/** Composes only activity records already present on the selected shared case. */
+function getCitizenCaseTimeline(caseData: SharedCaseContract): CaseActivity[] {
+  const activities: CaseActivity[] = caseData.objections.map((objection) => ({
+    key: `objection-${objection.objectionId}`,
+    date: objection.dateFiled || null,
+    title: "Objection filed",
+    description: `Objection ${objection.objectionId} was recorded for the selected case.`,
+    source: "Objection record",
+    status: sentenceCase(objection.status),
+    kind: "recorded",
+  }));
+
+  if (caseData.hearing) {
+    activities.push({
+      key: `hearing-${caseData.hearing.hearingId}`,
+      date: caseData.hearing.scheduledDate,
+      title: caseData.hearing.status === "scheduled" ? "Hearing scheduled" : "Hearing status",
+      description: `Reference: ${caseData.hearing.hearingId}`,
+      source: "Hearing record",
+      status: sentenceCase(caseData.hearing.status),
+      kind:
+        caseData.hearing.status === "scheduled" && caseData.hearing.scheduledDate
+          ? "upcoming"
+          : "recorded",
+    });
+  }
+
+  return activities.sort((left, right) => {
+    return (left.date ?? "").localeCompare(right.date ?? "");
+  });
+}
+
+function titleCase(value: string) {
+  return value.replace(/_/g, " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function sentenceCase(value: string) {
+  const normalized = value.replace(/_/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
+        date,
+      );
+}
+
+function Page() {
+  const query = useCitizenCase();
+  const caseData = query.data?.selected ?? null;
+  const activities = caseData ? getCitizenCaseTimeline(caseData) : [];
+  const recordedActivities = activities.filter((activity) => activity.kind === "recorded");
+  const upcomingActivities = activities.filter((activity) => activity.kind === "upcoming");
+  const citizenRelationship = caseData?.ownership.find(
+    (interest) => interest.interestType === "other" && interest.verification === "unverified",
+  );
+  const portalRelationshipLabel = citizenRelationship
+    ? `${titleCase(citizenRelationship.interestType)} · ${titleCase(citizenRelationship.verification)}`
+    : "Unavailable";
+
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
+        eyebrow="Citizen portal"
         title="Timeline"
-        description="Track what has happened, what is active, and what is expected next in your acquisition case."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Recorded milestones and the current workflow stage for your selected case."
       />
-
-      <Section title="Acquisition milestones" description="Status of the land acquisition process for your parcel.">
-        <div className="space-y-4">
-          {CITIZEN_TIMELINE.map((item, index) => (
-            <div key={`${item.title}-${index}`} className="surface-panel relative overflow-hidden p-4 pl-5">
-              <div className="absolute left-0 top-0 h-full w-1 bg-primary/20" />
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="grid size-9 place-items-center rounded-full bg-secondary text-primary">
-                    <Clock3 className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[0.65rem] font-bold uppercase tracking-wider text-primary">
-                        {item.stageCode ?? `Stage ${index + 1}`}
-                      </span>
-                      <StatusPill tone={item.tone}>{item.label}</StatusPill>
-                    </div>
-                    <h3 className="mt-1 text-base font-bold text-foreground">{item.title}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">{item.plain}</p>
-                  </div>
+      <CitizenCaseState loading={query.isLoading} error={query.error} caseData={caseData} />
+      {caseData ? (
+        <>
+          <CitizenCaseContext caseData={caseData} />
+          {recordedActivities.length > 0 ? (
+            <Section title="Recorded activity">
+              <ActivityList activities={recordedActivities} />
+            </Section>
+          ) : null}
+          {upcomingActivities.length > 0 ? (
+            <Section title="Upcoming activity">
+              <ActivityList activities={upcomingActivities} />
+            </Section>
+          ) : null}
+          <Section title="Current case status">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <article className="surface-panel flex items-start gap-3 border-primary/30 bg-primary/[0.03] p-5">
+                <Flag className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Current workflow stage
+                  </p>
+                  <h2 className="mt-1 font-serif text-lg font-semibold">
+                    {getStageDisplayLabel(caseData.currentStage)}
+                  </h2>
+                  <StatusPill tone="progress">Current</StatusPill>
                 </div>
-
-                <div className="rounded border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground md:text-right">
-                  <div className="flex items-center gap-1.5">
-                    <MapPinned className="size-3.5" />
-                    {item.date}
-                  </div>
-                </div>
-              </div>
+              </article>
+              <article className="surface-panel p-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Portal relationship
+                </p>
+                <h2 className="mt-1 font-serif text-lg font-semibold">{portalRelationshipLabel}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  This Citizen access relationship does not by itself establish legal ownership.
+                </p>
+              </article>
             </div>
-          ))}
-        </div>
-      </Section>
+          </Section>
+        </>
+      ) : null}
     </AppShell>
+  );
+}
+
+function ActivityList({ activities }: { activities: CaseActivity[] }) {
+  return (
+    <ol className="relative space-y-0 border-l border-border pl-5 sm:pl-7">
+      {activities.map((activity) => {
+        const upcoming = activity.kind === "upcoming";
+        const Icon = upcoming ? CalendarDays : Clock3;
+        return (
+          <li key={activity.key} className="relative pb-6 last:pb-0">
+            <span className="absolute -left-[1.9rem] top-0.5 flex size-8 items-center justify-center rounded-full border border-border bg-background text-primary sm:-left-[2.4rem]">
+              <Icon className="size-4" aria-hidden="true" />
+            </span>
+            <article className="surface-panel p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {activity.date ? formatDate(activity.date) : "Date unavailable"}
+                  </p>
+                  <h2 className="mt-1 font-serif text-lg font-semibold">{activity.title}</h2>
+                </div>
+                <StatusPill tone={upcoming ? "progress" : "neutral"}>{activity.status}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {activity.description}
+              </p>
+              <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <CircleDot className="size-3.5" aria-hidden="true" /> {activity.source}
+              </p>
+            </article>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

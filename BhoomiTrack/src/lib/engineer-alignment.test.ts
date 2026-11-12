@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getDefaultDemoGisData, validateEngineerGeoJson } from "./gis";
+import {
+  ANALYSIS_CORRIDOR_BUFFER_M,
+  buildAlignmentImpact,
+  getDefaultDemoGisData,
+  validateEngineerGeoJson,
+} from "./gis";
 
 describe("validateEngineerGeoJson", () => {
   it("accepts a valid GeoJSON FeatureCollection with ordered point coordinates in WGS84", () => {
@@ -33,6 +38,23 @@ describe("validateEngineerGeoJson", () => {
     expect(() => validateEngineerGeoJson(invalid)).toThrow(/longitude|latitude|coordinates/i);
   });
 
+  it("preserves all 13 supplied-style points and uses the canonical corridor", () => {
+    const source = {
+      type: "FeatureCollection",
+      features: Array.from({ length: 13 }, (_, index) => ({
+        type: "Feature",
+        properties: { point_order: index + 1 },
+        geometry: { type: "Point", coordinates: [72.83 + index * 0.0001, 18.92 + index * 0.0001] },
+      })),
+    };
+
+    const result = validateEngineerGeoJson(source);
+
+    expect(result.points).toHaveLength(13);
+    expect(result.alignment.features[0]?.geometry.coordinates).toEqual(result.points);
+    expect(result.corridor.features[0]?.properties["buffer_m"]).toBe(ANALYSIS_CORRIDOR_BUFFER_M);
+  });
+
   it("includes a default demo GIS dataset with visible route impact", () => {
     const demo = getDefaultDemoGisData();
 
@@ -42,15 +64,35 @@ describe("validateEngineerGeoJson", () => {
     expect(demo.summary.candidate_affected).toBeGreaterThan(0);
   });
 
-  it("keeps the affected area above zero when a parcel only touches the corridor boundary", () => {
-    const demo = getDefaultDemoGisData();
-    const impact = {
-      affectedParcels: demo.parcels,
-      corridor: demo.corridor,
-      affectedIds: new Set(demo.parcels.features.map((feature) => String(feature.properties.id ?? ""))),
-      summary: { affectedCount: demo.parcels.features.length, totalAffectedAreaSqm: 1 },
-    };
+  it("uses positive geometry intersection area and ignores stored affected area", () => {
+    const alignment = validateEngineerGeoJson({
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", properties: { point_order: 1 }, geometry: { type: "Point", coordinates: [72.82, 18.91] } },
+        { type: "Feature", properties: { point_order: 2 }, geometry: { type: "Point", coordinates: [72.83, 18.91] } },
+      ],
+    });
+    const parcel = {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [[[72.824, 18.909], [72.826, 18.909], [72.826, 18.911], [72.824, 18.911], [72.824, 18.909]]],
+      },
+      properties: {
+        id: "parcel-1",
+        parcel_ref: "MH-AWARD-0001",
+        total_area_sqm: 100000,
+        affected_area_sqm: 999999,
+      },
+    } as const;
 
-    expect(impact.summary.totalAffectedAreaSqm).toBeGreaterThan(0);
+    const impact = buildAlignmentImpact({ type: "FeatureCollection", features: [parcel] }, alignment.alignment);
+
+    expect(impact.summary.affectedCount).toBe(1);
+    expect(impact.summary.totalAffectedAreaSqm).toBeLessThan(999999);
+    expect(impact.affectedParcels.features[0]?.properties["affected_area_sqm"]).toBe(
+      impact.parcelAffectedAreaMap.get("parcel-1"),
+    );
   });
+
 });

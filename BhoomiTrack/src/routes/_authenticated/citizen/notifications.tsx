@@ -1,92 +1,172 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, Clock3, ShieldAlert } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Bell,
+  CalendarDays,
+  CircleDollarSign,
+  FileText,
+  Home,
+  Info,
+  MessageSquareText,
+} from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
-
-const notifications = [
-  {
-    title: "Objection window open",
-    detail: "Your case is in the statutory objection window. Review land records before the deadline.",
-    date: "30 Aug 2026",
-    tone: "progress" as const,
-    label: "Action required",
-  },
-  {
-    title: "Compensation estimate updated",
-    detail: "The preliminary compensation estimate was revised and is available for reference.",
-    date: "25 Aug 2026",
-    tone: "neutral" as const,
-    label: "Update",
-  },
-  {
-    title: "Hearing scheduled",
-    detail: "The authority has registered a hearing for the objection and supporting proof.",
-    date: "20 Aug 2026",
-    tone: "progress" as const,
-    label: "Scheduled",
-  },
-];
+import { useAuth } from "@/lib/auth";
+import {
+  CitizenCaseContext,
+  CitizenCaseState,
+  useCitizenCase,
+} from "@/lib/shared-case/citizen-case";
+import { getCitizenCaseUpdates, type CitizenCaseUpdate } from "@/lib/shared-case/citizen-updates";
 
 export const Route = createFileRoute("/_authenticated/citizen/notifications")({
-  head: () => ({
-    meta: [
-      { title: "Notifications — Citizen Portal" },
-      {
-        name: "description",
-        content: "Citizen notifications and action-required updates for the case.",
-      },
-    ],
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
   }),
-  component: CitizenNotificationsPage,
+  component: Page,
 });
 
-function CitizenNotificationsPage() {
+const TYPE_LABELS: Record<CitizenCaseUpdate["type"], string> = {
+  case_update: "Case update",
+  hearing: "Hearing",
+  objection: "Objection",
+  compensation: "Compensation",
+  r_and_r: "R&R",
+};
+
+function updateIcon(type: CitizenCaseUpdate["type"]) {
+  switch (type) {
+    case "hearing":
+      return CalendarDays;
+    case "objection":
+      return FileText;
+    case "compensation":
+      return CircleDollarSign;
+    case "r_and_r":
+      return Home;
+    default:
+      return MessageSquareText;
+  }
+}
+
+function formatDate(value: string) {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(dateOnly ? `${value}T00:00:00` : value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    ...(dateOnly ? {} : { hour: "2-digit", minute: "2-digit" }),
+  }).format(date);
+}
+
+function channelLabel(channels: CitizenCaseUpdate["channels"]) {
+  if (channels.includes("portal") && channels.includes("sms")) return "Portal + SMS";
+  return channels.includes("sms") ? "SMS" : "Portal";
+}
+
+function Page() {
+  const caseQuery = useCitizenCase();
+  const caseData = caseQuery.data?.selected ?? null;
+  const { user } = useAuth();
+  const updatesQuery = useQuery({
+    queryKey: ["citizen-case-updates", user?.id ?? null, caseData?.id ?? null, "portal"],
+    enabled: Boolean(caseData),
+    queryFn: () => getCitizenCaseUpdates(caseData!, "portal"),
+  });
+  const updates = updatesQuery.data ?? [];
+
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
+        eyebrow="Citizen portal"
         title="Notifications"
-        description="Review important updates, deadlines and action reminders for your acquisition case."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Case-specific updates for your selected acquisition case."
       />
-
-      <Section title="Recent updates" description="Current notifications for your citizen account.">
-        <div className="space-y-4">
-          {notifications.map((item) => (
-            <article key={item.title} className="surface-panel p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="grid size-9 place-items-center rounded-full bg-secondary text-primary">
-                    <Bell className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-bold text-foreground">{item.title}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                  <StatusPill tone={item.tone}>{item.label}</StatusPill>
-                  <div className="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                    <Clock3 className="size-3.5" />
-                    {item.date}
-                  </div>
-                </div>
+      <CitizenCaseState loading={caseQuery.isLoading} error={caseQuery.error} caseData={caseData} />
+      {caseData ? (
+        <>
+          <CitizenCaseContext caseData={caseData} />
+          <Section
+            title="Latest case updates"
+            description="Case-record information and updates shared for your selected case appear here."
+          >
+            {updatesQuery.isLoading ? (
+              <div className="space-y-3" aria-label="Loading case updates">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="surface-panel h-28 animate-pulse bg-muted" />
+                ))}
               </div>
-            </article>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Important note" description="These are representative updates for prototype display.">
-        <div className="surface-panel p-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <ShieldAlert className="size-4 text-primary" />
-            Notification content is shown in a static/demo format and is not connected to a live backend system.
+            ) : updatesQuery.error ? (
+              <div className="surface-panel p-5 text-sm text-destructive" role="alert">
+                {updatesQuery.error instanceof Error
+                  ? updatesQuery.error.message
+                  : "Case updates are unavailable."}
+              </div>
+            ) : updates.length > 0 ? (
+              <ol className="space-y-3">
+                {updates.map((update) => (
+                  <UpdateCard key={update.id} update={update} />
+                ))}
+              </ol>
+            ) : (
+              <div className="surface-panel p-6 sm:p-8">
+                <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted/40 text-primary">
+                  <Bell className="size-5" aria-hidden="true" />
+                </span>
+                <h2 className="mt-4 font-serif text-lg font-semibold">
+                  Your selected case does not have any new case-specific updates.
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  When the responsible department publishes an update for this case, it will appear
+                  here.
+                </p>
+              </div>
+            )}
+          </Section>
+          <div className="mt-6 flex gap-3 rounded-xl border border-border bg-muted/30 p-4">
+            <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              This feed does not track read/unread status. No badge count or delivery state is
+              inferred.
+            </p>
           </div>
-        </div>
-      </Section>
+        </>
+      ) : null}
     </AppShell>
+  );
+}
+
+function UpdateCard({ update }: { update: CitizenCaseUpdate }) {
+  const Icon = updateIcon(update.type);
+  return (
+    <li className="surface-panel flex gap-4 p-4 sm:p-5">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="size-5" aria-hidden="true" />
+      </span>
+      <article className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              {TYPE_LABELS[update.type]}
+            </p>
+            <h2 className="mt-1 break-words font-semibold">{update.title}</h2>
+          </div>
+          <StatusPill tone="neutral">
+            {update.sourceKind === "officer_update" ? "Officer update" : "Case record"}
+          </StatusPill>
+        </div>
+        <p className="mt-3 break-words text-sm leading-relaxed text-foreground/85">
+          {update.message}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
+          {update.createdAt ? <span>{formatDate(update.createdAt)}</span> : null}
+          {update.source ? <span>Source: {update.source}</span> : null}
+          <span>Channel: {channelLabel(update.channels)}</span>
+        </div>
+      </article>
+    </li>
   );
 }

@@ -1,13 +1,26 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section, MetricCard } from "@/components/layout/PageHeader";
 import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
-import { AlertTriangle, CalendarClock, FileCheck2, Landmark, Plus, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  FileCheck2,
+  Landmark,
+  Plus,
+  Loader2,
+  Send,
+} from "lucide-react";
 import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
 import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
+import { CITIZEN_CASE_UPDATE_EVENT } from "@/lib/shared-case/citizen-updates";
+import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
+import type { CitizenUpdateChannel } from "@/lib/shared-case/citizen-updates";
 
 export const Route = createFileRoute("/_authenticated/officer/revenue/cases")({
   head: () => ({
@@ -50,6 +63,7 @@ function getStatusForReadiness(readiness: string) {
 }
 
 function RevenueCasesPage() {
+  const { role, department } = useAuth();
   const { data: cases = [], isLoading } = useQuery({
     queryKey: caseQueryKeys.list(),
     queryFn: listSharedCases,
@@ -238,6 +252,10 @@ function RevenueCasesPage() {
                       : "Case is ready for the next statutory workflow stage. No blocking issues found."}
                 </p>
               </div>
+
+              {role === "officer" && department === "land_acquisition" ? (
+                <CitizenCaseUpdateComposer caseData={selectedCase} />
+              ) : null}
             </div>
           ) : (
             !isLoading && (
@@ -249,5 +267,163 @@ function RevenueCasesPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function CitizenCaseUpdateComposer({ caseData }: { caseData: SharedCaseContract }) {
+  const { user } = useAuth();
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [channel, setChannel] = useState<"portal" | "sms" | "both">("portal");
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(
+    null,
+  );
+
+  const publish = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedTitle = title.trim();
+    const trimmedMessage = message.trim();
+    if (!user || !trimmedTitle || !trimmedMessage) {
+      setFeedback({ tone: "error", text: "Enter an update title and message." });
+      return;
+    }
+
+    setIsPublishing(true);
+    setFeedback(null);
+    try {
+      const { data: linkedCase, error: caseError } = await supabase
+        .from("acquisition_cases")
+        .select("id")
+        .eq("case_no", caseData.id)
+        .maybeSingle();
+      if (caseError) throw new Error(`Unable to resolve the selected case: ${caseError.message}`);
+      if (!linkedCase)
+        throw new Error("The selected acquisition case is not available to this Officer session.");
+
+      const channels: CitizenUpdateChannel[] = channel === "both" ? ["portal", "sms"] : [channel];
+      const { error } = await supabase.from("case_workflow_events").insert({
+        case_id: linkedCase.id,
+        stage: caseData.currentStage,
+        event_type: CITIZEN_CASE_UPDATE_EVENT,
+        action: "PUBLISH_TO_CITIZEN",
+        actor_user_id: user.id,
+        actor_label: null,
+        remarks: trimmedMessage,
+        metadata: {
+          title: trimmedTitle,
+          update_type: "case_update",
+          channels,
+          visible_to_citizen: true,
+          source_label: "Officer portal",
+        },
+      });
+      if (error) throw new Error(`Unable to publish this case update: ${error.message}`);
+
+      setTitle("");
+      setMessage("");
+      setFeedback({
+        tone: "success",
+        text:
+          channel === "sms" || channel === "both"
+            ? "Case update published. SMS is marked as a selected channel; no SMS delivery is performed by this prototype."
+            : "Case update published to the Citizen portal.",
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Unable to publish this case update.",
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-background p-4 sm:p-5">
+      <div className="mb-4">
+        <h3 className="font-serif text-lg font-semibold">Publish Citizen case update</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          This update is attached to {caseData.id} and will be visible to Citizens whose case
+          relationship passes RLS.
+        </p>
+      </div>
+      <form className="space-y-4" onSubmit={publish}>
+        <div>
+          <label
+            htmlFor="citizen-update-title"
+            className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Update title
+          </label>
+          <input
+            id="citizen-update-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={120}
+            required
+            className="mt-1.5 min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            placeholder="Case update"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="citizen-update-message"
+            className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Message
+          </label>
+          <textarea
+            id="citizen-update-message"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            maxLength={1200}
+            required
+            rows={4}
+            className="mt-1.5 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            placeholder="Enter a case-specific update for the Citizen."
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <div>
+            <label
+              htmlFor="citizen-update-channel"
+              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Channel
+            </label>
+            <select
+              id="citizen-update-channel"
+              value={channel}
+              onChange={(event) => setChannel(event.target.value as "portal" | "sms" | "both")}
+              className="mt-1.5 min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="portal">Portal</option>
+              <option value="sms">SMS channel record</option>
+              <option value="both">Portal + SMS channel record</option>
+            </select>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              SMS selection records a channel only; no provider sends a message.
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={isPublishing || !user}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Send className="size-4" aria-hidden="true" />
+            {isPublishing ? "Publishing…" : "Publish update"}
+          </button>
+        </div>
+        {feedback ? (
+          <p
+            className={`rounded-lg border p-3 text-sm ${feedback.tone === "error" ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-status-success/35 bg-status-success/10 text-foreground"}`}
+            role={feedback.tone === "error" ? "alert" : "status"}
+          >
+            {feedback.text}
+          </p>
+        ) : null}
+      </form>
+    </section>
   );
 }

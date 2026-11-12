@@ -1,99 +1,104 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { FileText, FolderOpen, ShieldCheck } from "lucide-react";
+import { FileText, FolderOpen, Info } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
-
-const documents = [
-  {
-    name: "Section 3A Gazette Notification",
-    type: "Public notice",
-    status: "Available",
-    note: "Government notification covering the project corridor and affected areas.",
-  },
-  {
-    name: "Cadastral Survey Sheet (JMS)",
-    type: "Survey document",
-    status: "Verified",
-    note: "Joint measurement survey with parcel boundaries and affected extent.",
-  },
-  {
-    name: "7/12 Extract",
-    type: "Title record",
-    status: "Available",
-    note: "Crop and ownership record for the affected parcel.",
-  },
-  {
-    name: "Award Computation Sheet",
-    type: "Compensation record",
-    status: "Draft",
-    note: "Preliminary estimate prepared for review and approval.",
-  },
-];
+import {
+  CitizenCaseContext,
+  CitizenCaseState,
+  useCitizenCase,
+} from "@/lib/shared-case/citizen-case";
+import { resolveCitizenCasePresentation } from "@/lib/shared-case/citizen-demo-data";
 
 export const Route = createFileRoute("/_authenticated/citizen/documents")({
-  head: () => ({
-    meta: [
-      { title: "Documents — Citizen Portal" },
-      {
-        name: "description",
-        content: "Citizen documents and records for the affected land acquisition case.",
-      },
-    ],
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
   }),
-  component: CitizenDocumentsPage,
+  component: Page,
 });
 
-function CitizenDocumentsPage() {
+function Page() {
+  const query = useCitizenCase();
+  const caseData = query.data?.selected ?? null;
+  const presentation = caseData ? resolveCitizenCasePresentation(caseData) : null;
+
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
+        eyebrow="Citizen portal"
         title="Documents"
-        description="Download or review the public notices, records and survey documents relevant to your parcel."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Review documents published for your selected acquisition case."
       />
-
-      <Section title="Available records" description="Citizen-facing documents currently available for review.">
-        <div className="grid gap-4 md:grid-cols-2">
-          {documents.map((doc) => (
-            <article key={doc.name} className="surface-panel p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="grid size-9 place-items-center rounded-lg bg-secondary text-primary">
-                    <FileText className="size-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{doc.type}</p>
-                    <h3 className="mt-1 text-base font-bold text-foreground">{doc.name}</h3>
-                  </div>
+      <CitizenCaseState loading={query.isLoading} error={query.error} caseData={caseData} />
+      {caseData ? (
+        <>
+          <CitizenCaseContext caseData={caseData} />
+          <Section
+            title="Document center"
+            description="Case-specific documents available through the Citizen portal."
+          >
+            <div className="surface-panel overflow-hidden">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border bg-muted/30 p-5 sm:p-6">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    Documents for selected case
+                  </p>
+                  <h2 className="mt-2 break-words font-serif text-xl font-bold">{caseData.id}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Parcel {presentation?.parcelRef || "Unavailable"}
+                  </p>
                 </div>
-                <StatusPill tone={doc.status === "Verified" ? "complete" : doc.status === "Draft" ? "progress" : "neutral"}>{doc.status}</StatusPill>
+                <StatusPill tone="neutral">Not available</StatusPill>
               </div>
-              <p className="mt-3 text-sm text-muted-foreground">{doc.note}</p>
-            </article>
-          ))}
-        </div>
-      </Section>
+              <div className="px-5 py-10 text-center sm:px-8 sm:py-12">
+                <span className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-border bg-background text-primary">
+                  <FolderOpen className="size-7" aria-hidden="true" />
+                </span>
+                <h3 className="mt-5 font-serif text-lg font-semibold">
+                  No case-specific documents are currently available through the Citizen portal.
+                </h3>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                  Documents published for this case will appear here when they are available. No
+                  document records or download links are provided by the current case data.
+                </p>
+              </div>
+            </div>
+          </Section>
 
-      <Section title="Document access" description="These records are shared for reference and do not require a backend upload workflow.">
-        <div className="surface-panel p-4">
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-              <FolderOpen className="size-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Citizen document archive</p>
-              <p className="text-xs text-muted-foreground">Records remain available for viewing and review through the portal.</p>
-            </div>
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <Section title="Document access">
+              <div className="surface-panel flex gap-3 p-5">
+                <Info className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Only documents associated with your selected case are shown in the Citizen portal.
+                </p>
+              </div>
+            </Section>
+            <Section title="Case references">
+              <dl className="surface-panel grid gap-4 p-5 sm:grid-cols-2">
+                <Reference label="Case" value={caseData.id} />
+                <Reference label="Parcel" value={presentation?.parcelRef || "Unavailable"} />
+              </dl>
+            </Section>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <ShieldCheck className="size-4 text-primary" />
-            All listed documents are for representative prototype display only.
-          </div>
-        </div>
-      </Section>
+          <p className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
+            <FileText className="size-4" aria-hidden="true" />
+            Availability here describes the Citizen portal records; it does not indicate whether
+            documents exist elsewhere.
+          </p>
+        </>
+      ) : null}
     </AppShell>
+  );
+}
+
+function Reference({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-mono text-sm font-semibold">{value}</dd>
+    </div>
   );
 }

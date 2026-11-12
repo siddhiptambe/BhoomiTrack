@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section, MetricCard } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
-import { StatusPill } from "@/components/ui/status-pill";
+import { Loader2 } from "lucide-react";
+import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
+import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
 
 export const Route = createFileRoute("/_authenticated/officer/survey/")({
   head: () => ({
@@ -10,8 +12,7 @@ export const Route = createFileRoute("/_authenticated/officer/survey/")({
       { title: "Survey & Land Records Dashboard — BhoomiTrack" },
       {
         name: "description",
-        content:
-          "Survey and Land Records Department dashboard: physical boundary measurement, tree/structure enumeration, and discrepancy flagging.",
+        content: "Survey and Land Records case and parcel identity overview.",
       },
     ],
   }),
@@ -19,38 +20,124 @@ export const Route = createFileRoute("/_authenticated/officer/survey/")({
 });
 
 function SurveyDashboard() {
+  const {
+    data: cases = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: caseQueryKeys.list(),
+    queryFn: listSharedCases,
+  });
+
   return (
     <AppShell portal="officer" department="survey_land_records">
       <PageHeader
         eyebrow="Survey & Land Records · Officer Portal"
         title="Survey & Land Records Console"
-        description="Physical field survey, cadastral boundary verification, structure/tree enumeration, and ground-truth discrepancy flagging."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Shared acquisition case identities and parcel records used across BhoomiTrack."
       />
 
-      <Section title="Survey field metrics" description="Progress of alignment boundary investigation.">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Total corridor parcels" value="68" note="Intersecting alignment" />
-          <MetricCard label="Pending field survey" value="19" note="Need on-ground inspection" />
-          <MetricCard label="Surveys completed" value="49" note="Physical area certified" />
-          <MetricCard label="Open ground issues" value="12" note="Flagged for LAO resolution" />
+      <Section title="Shared cases" description="Select a case to review its parcel dossier.">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard
+            label="Cases available"
+            value={isLoading ? "…" : isError ? "Unavailable" : String(cases.length)}
+            note="Visible through the shared-case source"
+          />
+          <MetricCard
+            label="Field survey status"
+            value="Not recorded"
+            note="No persisted Survey status source"
+          />
+          <MetricCard
+            label="Open ground issues"
+            value="Not recorded"
+            note="No persisted Survey issue source"
+          />
         </div>
-      </Section>
 
-      <Section title="Parcels needing field survey" description="Parcels scheduled for physical ground measurement.">
-        <div className="space-y-3">
-          <div className="surface-panel flex flex-col justify-between gap-4 p-4 sm:flex-row sm:items-center">
-            <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">PAR-204</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">GIS Area: 8,420 sqm · Field measurement pending</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Khasra 49 · Madhya Village</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusPill tone="progress">Pending field survey</StatusPill>
-              <a href="/officer/survey/parcels" className="inline-flex rounded-md bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground">Enter findings</a>
-            </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8 text-muted-foreground">
+            <Loader2 className="size-6 animate-spin" />
           </div>
-        </div>
+        ) : isError ? (
+          <p className="surface-panel p-4 text-sm text-muted-foreground">
+            Shared cases are unavailable.
+          </p>
+        ) : cases.length === 0 ? (
+          <p className="surface-panel p-4 text-sm text-muted-foreground">
+            No shared cases are available.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded border border-border">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="bg-muted/60 text-xs text-muted-foreground">
+                <tr>
+                  {[
+                    "Case ID",
+                    "Project",
+                    "Parcel Reference",
+                    "Location",
+                    "Cadastral IDs",
+                    "Recorded Area",
+                    "Current Stage",
+                    "Land Type",
+                    "",
+                  ].map((heading) => (
+                    <th key={heading || "open"} className="px-3 py-2 font-semibold">
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map((c) => (
+                  <tr key={c.id} className="border-t border-border align-top">
+                    <td className="px-3 py-3 font-semibold">{c.id || "Unavailable"}</td>
+                    <td className="px-3 py-3">
+                      {c.project.projectCode || "Unavailable"}
+                      <br />
+                      <span className="text-xs text-muted-foreground">
+                        {c.project.projectName || "Unavailable"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">{c.parcel.parcelRef || "Unavailable"}</td>
+                    <td className="px-3 py-3">
+                      {c.parcel.village || "Unavailable"}
+                      <br />
+                      <span className="text-xs text-muted-foreground">
+                        {c.parcel.tehsil || "Unavailable"} · {c.parcel.district || "Unavailable"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs">
+                      Survey: {c.parcel.surveyNo || "Unavailable"}
+                      <br />
+                      Gat: {c.parcel.gatNo || "Unavailable"}
+                      <br />
+                      Khasra: {c.parcel.khasraNo || "Unavailable"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {c.parcel.totalAreaSqm == null
+                        ? "Unavailable"
+                        : `${c.parcel.totalAreaSqm.toLocaleString()} m²`}
+                    </td>
+                    <td className="px-3 py-3">{getStageDisplayLabel(c.currentStage)}</td>
+                    <td className="px-3 py-3">{c.landType || "Unavailable"}</td>
+                    <td className="px-3 py-3">
+                      <Link
+                        to="/officer/survey/parcels"
+                        search={{ caseId: c.id }}
+                        className="text-xs font-semibold text-primary underline underline-offset-2"
+                      >
+                        Open dossier
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
     </AppShell>
   );

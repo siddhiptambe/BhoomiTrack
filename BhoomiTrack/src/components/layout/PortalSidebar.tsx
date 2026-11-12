@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
   OFFICER_DEPARTMENT_META,
   ROLE_META,
@@ -26,6 +26,8 @@ export function PortalSidebar({
   onNavigate?: () => void;
 }) {
   const { department: authDepartment } = useAuth();
+  const location = useLocation();
+  const citizenCaseId = String((location.search as { caseId?: string }).caseId ?? "");
 
   const activeDepartment = department ?? authDepartment ?? null;
 
@@ -39,7 +41,7 @@ export function PortalSidebar({
   const sidebarLabel =
     portal === "officer"
       ? activeDepartment
-        ? OFFICER_DEPARTMENT_META[activeDepartment]?.label ?? "Officer Portal"
+        ? (OFFICER_DEPARTMENT_META[activeDepartment]?.label ?? "Officer Portal")
         : "Officer / Admin"
       : ROLE_META[portal].label;
 
@@ -67,6 +69,9 @@ export function PortalSidebar({
                 <li key={item.key}>
                   <Link
                     to={item.to}
+                    {...(portal === "citizen" && citizenCaseId
+                      ? { search: { caseId: citizenCaseId } }
+                      : {})}
                     onClick={onNavigate}
                     className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium text-foreground transition-all hover:bg-secondary hover:text-foreground"
                     activeOptions={{ exact: true }}

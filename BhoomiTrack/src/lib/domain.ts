@@ -11,8 +11,7 @@ export const APP = {
   shortName: "BhoomiTrack",
   name: "Integrated Land Acquisition & Management Platform",
   fullName: "BhoomiTrack — Integrated Land Acquisition & Management Platform",
-  tagline:
-    "One parcel — one acquisition case — one traceable lifecycle.",
+  tagline: "One parcel — one acquisition case — one traceable lifecycle.",
   specVersion: "Master System Specification v1.0",
 } as const;
 
@@ -79,7 +78,10 @@ export const AGENCIES = [
 ] as const;
 export type Agency = (typeof AGENCIES)[number];
 
-export const AGENCY_META: Record<Agency, { label: string; status: "Active Prototype" | "Preview" }> = {
+export const AGENCY_META: Record<
+  Agency,
+  { label: string; status: "Active Prototype" | "Preview" }
+> = {
   national_highways: { label: "National Highways", status: "Active Prototype" },
   railways: { label: "Railways", status: "Preview" },
   msrdc: { label: "MSRDC", status: "Preview" },
@@ -105,7 +107,7 @@ export const ROLE_META: Record<
     home: "/ministry",
   },
   citizen: {
-    label: "Citizen / Landowner",
+    label: "Citizen",
     purpose: "Understand and participate in your own case",
     home: "/citizen",
   },

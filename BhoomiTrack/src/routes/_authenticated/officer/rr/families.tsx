@@ -10,6 +10,9 @@ import { caseQueryKeys, listSharedCases } from "@/lib/shared-case/case-store";
 import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
 
 export const Route = createFileRoute("/_authenticated/officer/rr/families")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Affected Families — R&R Department" },
@@ -24,6 +27,8 @@ export const Route = createFileRoute("/_authenticated/officer/rr/families")({
 });
 
 function RRFamiliesPage() {
+  const { caseId } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const { data: cases = [], isLoading } = useQuery({
     queryKey: caseQueryKeys.list(),
     queryFn: listSharedCases,
@@ -34,31 +39,26 @@ function RRFamiliesPage() {
       .filter((c): c is SharedCaseContract => !!c.rr)
       .map((c) => ({
         id: c.id,
-        caseNo: c.id,
-        parcelCode: c.parcel.parcelRef,
-        khasraNo: c.parcel.parcelRef,
-        village: c.parcel.village,
+        caseId: c.id,
+        projectCode: c.project.projectCode,
         projectName: c.project.projectName,
+        parcelRef: c.parcel.parcelRef,
+        surveyNo: c.parcel.surveyNo,
+        gatNo: c.parcel.gatNo,
+        khasraNo: c.parcel.khasraNo,
+        village: c.parcel.village,
         affectedFamilies: c.rr!.eligibleFamilies,
-        displacedFamilies: 0, // Not available in contract
         status: c.rr!.status,
         housingAllottedCount: c.rr!.housingAllotted,
         livelihoodNotes: "—",
       }));
   }, [cases]);
 
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!selectedCaseId && rrCases.length > 0) {
-      setSelectedCaseId(rrCases[0]?.id ?? null);
-    }
-  }, [rrCases, selectedCaseId]);
-
-  const selectedCase = rrCases.find((caseItem) => caseItem.id === selectedCaseId) ?? null;
+  const selectedCase = caseId
+    ? (rrCases.find((caseItem) => caseItem.id === caseId) ?? null)
+    : (rrCases[0] ?? null);
 
   const [affectedCount, setAffectedCount] = useState<number>(0);
-  const [displacedCount, setDisplacedCount] = useState<number>(0);
   const [rrStatus, setRRStatus] = useState<string>("in_progress");
   const [housingCount, setHousingCount] = useState<number>(0);
   const [livelihoodNotes, setLivelihoodNotes] = useState<string>("");
@@ -66,7 +66,6 @@ function RRFamiliesPage() {
   useEffect(() => {
     if (selectedCase) {
       setAffectedCount(selectedCase.affectedFamilies);
-      setDisplacedCount(selectedCase.displacedFamilies);
       setRRStatus(selectedCase.status);
       setHousingCount(selectedCase.housingAllottedCount);
       setLivelihoodNotes(selectedCase.livelihoodNotes);
@@ -74,7 +73,7 @@ function RRFamiliesPage() {
   }, [selectedCase]);
 
   function selectCase(caseItem: (typeof rrCases)[0]) {
-    setSelectedCaseId(caseItem.id);
+    void navigate({ search: (previous) => ({ ...previous, caseId: caseItem.id }) });
   }
 
   function handleSaveRR(event: React.FormEvent) {
@@ -87,7 +86,7 @@ function RRFamiliesPage() {
       <PageHeader
         eyebrow="Rehabilitation & Resettlement Department"
         title="Affected & Displaced Families Management"
-        description="Enumeration of project-affected families, housing unit allotments in resettlement enclaves, and livelihood restoration."
+        description="Synthetic R&R adapter context associated with shared acquisition cases; this prototype does not persist updates."
         actions={<DataClassBadge dataClass="synthetic" />}
       />
 
@@ -114,11 +113,19 @@ function RRFamiliesPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="text-xs font-bold text-sky-700">{caseItem.caseNo}</span>
+                    <span className="text-xs font-bold text-sky-700">{caseItem.caseId}</span>
                     <h3 className="mt-0.5 text-sm font-semibold text-foreground">
-                      Khasra {caseItem.khasraNo} · {caseItem.village}
+                      Parcel: {caseItem.parcelRef || "Unavailable"} · Khasra:{" "}
+                      {caseItem.khasraNo || "Unavailable"} · {caseItem.village}
                     </h3>
-                    <p className="text-xs text-muted-foreground">{caseItem.projectName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {caseItem.projectCode || "Project code unavailable"} ·{" "}
+                      {caseItem.projectName || "Project name unavailable"}
+                    </p>
+                    <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                      Survey: {caseItem.surveyNo || "Unavailable"} · Gat:{" "}
+                      {caseItem.gatNo || "Unavailable"}
+                    </p>
                   </div>
                   <StatusPill
                     tone={
@@ -170,11 +177,17 @@ function RRFamiliesPage() {
                       Resettlement Scheme Dossier
                     </span>
                     <h2 className="mt-1 text-xl font-bold font-serif text-foreground">
-                      {selectedCase.caseNo}
+                      {selectedCase.caseId}
                     </h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Parcel: {selectedCase.parcelCode} · Khasra {selectedCase.khasraNo} (
-                      {selectedCase.village})
+                      {selectedCase.projectCode || "Project code unavailable"} ·{" "}
+                      {selectedCase.projectName || "Project name unavailable"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Parcel: {selectedCase.parcelRef || "Unavailable"} · Survey:{" "}
+                      {selectedCase.surveyNo || "Unavailable"} · Gat:{" "}
+                      {selectedCase.gatNo || "Unavailable"} · Khasra:{" "}
+                      {selectedCase.khasraNo || "Unavailable"} ({selectedCase.village})
                     </p>
                   </div>
                   <StatusPill
@@ -283,7 +296,9 @@ function RRFamiliesPage() {
             </div>
           ) : (
             <div className="surface-panel p-8 text-center text-sm text-muted-foreground">
-              Select an R&R case from the list to update family welfare details.
+              {caseId
+                ? `No R&R adapter context is available for requested case ${caseId}.`
+                : "No R&R case context is available."}
             </div>
           )}
         </div>

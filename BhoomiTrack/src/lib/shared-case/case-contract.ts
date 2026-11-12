@@ -21,7 +21,11 @@ export interface ProjectContext {
 export interface ParcelContext {
   id: string;
   parcelRef: string;
+  surveyNo: string | null;
+  gatNo: string | null;
+  khasraNo: string | null;
   village: string;
+  tehsil: string | null;
   district: string;
   totalAreaSqm: number | null;
   affectedAreaSqm: number | null;
@@ -31,6 +35,7 @@ export interface OwnershipRecord {
   partyId: string;
   displayName: string;
   interestType: string;
+  verification: string;
   shareNumerator: number | null;
   shareDenominator: number | null;
 }
@@ -100,7 +105,7 @@ export interface LandRecordUpdate {
 }
 
 export interface SharedCaseContract {
-  /** The unique canonical ID of the case (e.g., P-001) */
+  /** The unique database-provided case ID (for example, P-001) */
   id: string;
 
   /** 1. Project/corridor context */

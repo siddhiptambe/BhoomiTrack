@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { Bell, Search } from "lucide-react";
 import {
   APP,
@@ -25,6 +25,8 @@ export function TopBar({
   portal?: Role;
   department?: OfficerDepartment | null;
 }) {
+  const location = useLocation();
+  const citizenCaseId = String((location.search as { caseId?: string }).caseId ?? "");
   const { t, lang, setLang } = useI18n();
   const { role, setRole, largeText, toggleLargeText } = useDemoRole();
   const { status, user, role: authRole, signOut } = useAuth();
@@ -41,12 +43,8 @@ export function TopBar({
                 SIH
               </span>
               <span className="min-w-0 leading-tight">
-                <span className="block truncate font-serif text-sm font-semibold">
-                  {APP.code}
-                </span>
-                <span className="block truncate text-[0.7rem] opacity-75">
-                  {t("app.name")}
-                </span>
+                <span className="block truncate font-serif text-sm font-semibold">{APP.code}</span>
+                <span className="block truncate text-[0.7rem] opacity-75">{t("app.name")}</span>
               </span>
             </Link>
 
@@ -79,13 +77,11 @@ export function TopBar({
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/citizen/notifications"
+              search={{ caseId: citizenCaseId || undefined }}
               aria-label="Notifications"
               className="relative inline-flex rounded-md border border-sidebar-border bg-sidebar-accent p-1.5 text-sidebar-foreground transition-colors hover:bg-sidebar"
             >
               <Bell className="size-4" aria-hidden="true" />
-              <span className="absolute -right-0.5 -top-0.5 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-saffron px-1 text-[0.6rem] font-bold leading-none text-saffron-foreground">
-                3
-              </span>
             </Link>
 
             <label className="sr-only" htmlFor="lang-select">
@@ -116,9 +112,7 @@ export function TopBar({
             {status === "signedIn" && user ? (
               <div className="flex items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-2 py-1">
                 <span className="hidden min-w-0 flex-col leading-tight sm:flex">
-                  <span className="max-w-[11rem] truncate text-xs font-semibold">
-                    {user.email}
-                  </span>
+                  <span className="max-w-[11rem] truncate text-xs font-semibold">{user.email}</span>
                   <span className="text-[0.62rem] uppercase tracking-wide opacity-80">
                     {authRole ? ROLE_META[authRole].label : t("auth.role")}
                   </span>
@@ -153,9 +147,7 @@ export function TopBar({
               <select
                 id="role-select"
                 value={role ?? ""}
-                onChange={(e) =>
-                  setRole(e.target.value === "" ? null : (e.target.value as Role))
-                }
+                onChange={(e) => setRole(e.target.value === "" ? null : (e.target.value as Role))}
                 className="max-w-[8.5rem] bg-transparent text-sm"
               >
                 <option value="">No role</option>
@@ -170,10 +162,7 @@ export function TopBar({
         </div>
       </div>
 
-      <nav
-        aria-label="Portals"
-        className="border-b border-border bg-card/95 backdrop-blur"
-      >
+      <nav aria-label="Portals" className="border-b border-border bg-card/95 backdrop-blur">
         <div className="mx-auto flex max-w-[100rem] items-center gap-1 overflow-x-auto px-4 py-1.5">
           <Link
             to="/"

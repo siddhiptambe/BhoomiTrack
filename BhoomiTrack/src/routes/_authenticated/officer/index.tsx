@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AppShell, PhasePlaceholder } from "@/components/layout/AppShell";
 import { PageHeader, Section, MetricCard } from "@/components/layout/PageHeader";
@@ -14,6 +14,9 @@ import { getStageDisplayLabel } from "@/lib/shared-case/case-stage-map";
 import type { SharedCaseContract } from "@/lib/shared-case/case-contract";
 
 export const Route = createFileRoute("/_authenticated/officer/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Officer Portal — BhoomiTrack" },
@@ -77,6 +80,7 @@ function getAttentionReason(c: SharedCaseContract): string {
 function OfficerPortal() {
   const { department, departmentLoading } = useAuth();
   const navigate = useNavigate();
+  const { caseId } = Route.useSearch();
 
   useEffect(() => {
     if (
@@ -153,6 +157,13 @@ function OfficerPortal() {
           Error: No shared case data available.
         </div>
       </AppShell>
+    );
+  }
+
+  if (isDistrictAdmin) {
+    const selectedCase = caseId ? (cases.find((item) => item.id === caseId) ?? null) : null;
+    return (
+      <DistrictCoordinationWorkspace cases={cases} selectedCase={selectedCase} caseId={caseId} />
     );
   }
 
@@ -271,5 +282,249 @@ function OfficerPortal() {
         </div>
       </Section>
     </AppShell>
+  );
+}
+
+function DistrictCoordinationWorkspace({
+  cases,
+  selectedCase,
+  caseId,
+}: {
+  cases: SharedCaseContract[];
+  selectedCase: SharedCaseContract | null;
+  caseId: string | undefined;
+}) {
+  const pendingCases = cases.filter((item) => item.currentStage !== "completed");
+  const blockedCount = cases.filter((item) => item.readiness === "BLOCKED").length;
+  const reviewCount = cases.filter((item) => item.readiness === "REVIEW_REQUIRED").length;
+
+  if (caseId && !selectedCase) {
+    return (
+      <AppShell portal="officer" department="district_administration">
+        <PageHeader
+          eyebrow="District Administration / Coordination"
+          title="Case unavailable"
+          description="The requested case is not available in the shared case list for this session."
+          actions={<DataClassBadge dataClass="synthetic" />}
+        />
+        <Link
+          to="/officer"
+          search={{ caseId: undefined }}
+          className="inline-flex rounded-md border border-border px-3 py-2 text-sm font-semibold hover:bg-secondary"
+        >
+          Return to coordination queue
+        </Link>
+      </AppShell>
+    );
+  }
+
+  if (selectedCase) {
+    const blocker = getCoordinationBlocker(selectedCase);
+    return (
+      <AppShell portal="officer" department="district_administration">
+        <PageHeader
+          eyebrow="District Administration / Coordination · Read only"
+          title={`${selectedCase.id} coordination context`}
+          description="Review shared case context and coordination signals. This view does not authorize case processing."
+          actions={<DataClassBadge dataClass="synthetic" />}
+        />
+        <div className="mb-6">
+          <Link
+            to="/officer"
+            search={{ caseId: undefined }}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold hover:bg-secondary"
+          >
+            Return to coordination queue
+          </Link>
+        </div>
+        <Section
+          title="Shared case identity"
+          description="Values come from the selected shared case."
+        >
+          <dl className="surface-panel grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+            <Detail label="Case" value={selectedCase.id} />
+            <Detail label="Parcel" value={selectedCase.parcel.parcelRef || "Unavailable"} />
+            <Detail
+              label="Project"
+              value={
+                selectedCase.project.projectName ||
+                selectedCase.project.projectCode ||
+                "Unavailable"
+              }
+            />
+            <Detail label="Current stage" value={getStageDisplayLabel(selectedCase.currentStage)} />
+            <Detail label="Readiness" value={selectedCase.readiness.replace(/_/g, " ")} />
+          </dl>
+        </Section>
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <Section title="Blocker / exception context">
+            <div className="surface-panel space-y-3 p-5">
+              <p className="font-semibold">{blocker.title}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{blocker.detail}</p>
+              {selectedCase.objections.some((objection) => objection.status !== "resolved") ? (
+                <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                  {selectedCase.objections
+                    .filter((objection) => objection.status !== "resolved")
+                    .map((objection) => (
+                      <li key={objection.objectionId}>
+                        {objection.objectionId}: {objection.summary}
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+            </div>
+          </Section>
+          <Section title="Coordination ownership and R&R">
+            <div className="surface-panel space-y-4 p-5">
+              <Detail
+                label="Responsible downstream department"
+                value="Unavailable in the shared case data"
+              />
+              <Detail
+                label="Escalation context"
+                value="No escalation record is available in the shared case data"
+              />
+              {selectedCase.rr ? (
+                <div className="border-t border-border pt-4">
+                  <Detail
+                    label="R&R status · adapter-backed"
+                    value={selectedCase.rr.status.replace(/_/g, " ")}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Coordination context only; this status is prototype adapter data.
+                  </p>
+                </div>
+              ) : (
+                <Detail label="R&R progress" value="Unavailable in the current shared case data" />
+              )}
+            </div>
+          </Section>
+        </div>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell portal="officer" department="district_administration">
+      <PageHeader
+        eyebrow="District Administration / Coordination · Read only"
+        title="District Coordination Overview"
+        description="Coordinate review of shared acquisition cases. This workspace provides no execution authority."
+        actions={<DataClassBadge dataClass="synthetic" />}
+      />
+      <Section
+        title="Coordination overview"
+        description="Counts are derived from shared cases and adapter-backed readiness labels."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard label="Pending acquisition cases" value={String(pendingCases.length)} />
+          <MetricCard label="Blocked · prototype readiness" value={String(blockedCount)} />
+          <MetricCard label="Review required · prototype readiness" value={String(reviewCount)} />
+        </div>
+      </Section>
+      <Section
+        title="Coordination queue"
+        description="Select a case to inspect its shared identity and available coordination context."
+      >
+        <ul className="space-y-3">
+          {pendingCases.length === 0 ? (
+            <li className="surface-panel p-4 text-sm text-muted-foreground">
+              No pending cases are available in the shared case list.
+            </li>
+          ) : (
+            pendingCases.map((item) => {
+              const blocker = getCoordinationBlocker(item);
+              return (
+                <li
+                  key={item.id}
+                  className="surface-panel flex flex-wrap items-center justify-between gap-4 p-4"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                      {item.id} · {item.parcel.parcelRef || "Parcel unavailable"}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {item.project.projectName ||
+                        item.project.projectCode ||
+                        "Project unavailable"}
+                      {" · "}
+                      {getStageDisplayLabel(item.currentStage)}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{blocker.detail}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusPill
+                      tone={
+                        item.readiness === "BLOCKED"
+                          ? "issue"
+                          : item.readiness === "READY"
+                            ? "complete"
+                            : "progress"
+                      }
+                    >
+                      {item.readiness.replace(/_/g, " ")}
+                    </StatusPill>
+                    <Link
+                      to="/officer"
+                      search={{ caseId: item.id }}
+                      className="rounded-md border border-border px-3 py-2 text-sm font-semibold hover:bg-secondary"
+                    >
+                      Open case details
+                    </Link>
+                  </div>
+                </li>
+              );
+            })
+          )}
+        </ul>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Readiness and case notes are prototype adapter data; confirm details with the owning
+          department. Department ownership and escalation records are unavailable in the shared case
+          contract.
+        </p>
+      </Section>
+    </AppShell>
+  );
+}
+
+function getCoordinationBlocker(caseData: SharedCaseContract): { title: string; detail: string } {
+  if (caseData.readiness === "READY") {
+    return {
+      title: "No blocker recorded",
+      detail: "The shared case adapter marks this case ready to progress.",
+    };
+  }
+
+  const unresolvedObjections = caseData.objections.filter(
+    (objection) => objection.status !== "resolved",
+  );
+  const note = caseData.fieldEvidence.notes?.trim();
+  if (caseData.readiness === "BLOCKED") {
+    return {
+      title: "Blocked case",
+      detail:
+        note ||
+        unresolvedObjections[0]?.summary ||
+        "Blocker explanation is unavailable in the current shared case data.",
+    };
+  }
+
+  return {
+    title: "Review required",
+    detail:
+      note ||
+      unresolvedObjections[0]?.summary ||
+      "Review explanation is unavailable in the current shared case data.",
+  };
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-sm font-semibold">{value}</dd>
+    </div>
   );
 }

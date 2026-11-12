@@ -32,7 +32,11 @@ function RevenueObjectionsPage() {
     return cases.flatMap((c) =>
       (c.objections || []).map((obj) => ({
         id: obj.objectionId,
-        caseNo: c.id,
+        caseId: c.id,
+        projectCode: c.project.projectCode,
+        projectName: c.project.projectName,
+        parcelRef: c.parcel.parcelRef,
+        hearingDate: c.hearing?.scheduledDate ?? null,
         category: "Objection", // Fallback since category isn't in contract
         raisedBy: c.ownership[0]?.displayName ?? "Unknown Landowner",
         filedAt: obj.dateFiled,
@@ -90,10 +94,15 @@ function RevenueObjectionsPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="text-xs font-bold text-primary">{objection.caseNo}</span>
+                      <span className="text-xs font-bold text-primary">{objection.caseId}</span>
                       <h3 className="mt-0.5 text-sm font-semibold text-foreground">
                         {objection.category}
                       </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {objection.projectCode || "Project code unavailable"} ·{" "}
+                        {objection.projectName || "Project name unavailable"} ·{" "}
+                        {objection.parcelRef || "Parcel reference unavailable"}
+                      </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Raised by: <strong className="text-foreground">{objection.raisedBy}</strong>{" "}
                         — Filed on {objection.filedAt}
@@ -129,8 +138,13 @@ function RevenueObjectionsPage() {
                   Hearing docket
                 </span>
                 <h3 className="mt-1 text-base font-bold text-foreground">
-                  {selectedObjection.caseNo} — {selectedObjection.category}
+                  {selectedObjection.caseId} — {selectedObjection.category}
                 </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedObjection.projectCode || "Project code unavailable"} ·{" "}
+                  {selectedObjection.projectName || "Project name unavailable"} ·{" "}
+                  {selectedObjection.parcelRef || "Parcel reference unavailable"}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Objector: {selectedObjection.raisedBy}
                 </p>
@@ -151,7 +165,9 @@ function RevenueObjectionsPage() {
                       <Clock3 className="size-3.5 text-primary" />
                       Hearing window
                     </div>
-                    <p className="mt-2 text-sm font-semibold text-foreground">05 Sep 2026</p>
+                    <p className="mt-2 text-sm font-semibold text-foreground">
+                      {selectedObjection.hearingDate ?? "Unavailable"}
+                    </p>
                   </div>
                   <div className="rounded border border-border bg-card p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

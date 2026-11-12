@@ -1,106 +1,134 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CalendarClock, MapPin, ShieldCheck, UserRound } from "lucide-react";
+import { CalendarDays, FileText } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Section } from "@/components/layout/PageHeader";
-import { DataClassBadge } from "@/components/layout/DataClassBadge";
 import { StatusPill } from "@/components/ui/status-pill";
+import {
+  CitizenCaseContext,
+  CitizenCaseState,
+  useCitizenCase,
+} from "@/lib/shared-case/citizen-case";
 
 export const Route = createFileRoute("/_authenticated/citizen/hearing")({
-  head: () => ({
-    meta: [
-      { title: "Hearing Info — Citizen Portal" },
-      {
-        name: "description",
-        content: "Hearing schedule, authority and checklist for the citizen hearing process.",
-      },
-    ],
+  validateSearch: (search: Record<string, unknown>) => ({
+    caseId: typeof search["caseId"] === "string" ? search["caseId"] : undefined,
   }),
-  component: CitizenHearingPage,
+  component: Page,
 });
 
-const hearing = {
-  date: "28 August 2026",
-  time: "11:00 AM IST",
-  venue: "Room 204, CALA Office, District Collectorate Annexe, Pune - 411001",
-  authority: "Dr. S. K. Kulkarni, IAS",
-  designation: "Sub-Divisional Magistrate & Competent Authority (CALA Haveli)",
-  status: "Scheduled",
-  purpose: "Personal hearing on the objection regarding western boundary measurement and valuation of standing trees.",
-  documents: [
-    "Original 7/12 extract",
-    "Registered title deed or mutation documents",
-    "Aadhaar / government photo identity",
-    "Survey map and supporting land records",
-  ],
-};
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "long", year: "numeric" }).format(
+        date,
+      );
+}
 
-function CitizenHearingPage() {
+function hearingTone(status: string): "progress" | "complete" | "issue" | "neutral" {
+  switch (status.toLowerCase()) {
+    case "scheduled":
+    case "awaiting_schedule":
+      return "progress";
+    case "completed":
+      return "complete";
+    case "cancelled":
+    case "canceled":
+      return "issue";
+    default:
+      return "neutral";
+  }
+}
+
+function Page() {
+  const query = useCitizenCase();
+  const caseData = query.data?.selected ?? null;
+  const hearing = caseData?.hearing ?? null;
+  const hearingDate = hearing ? formatDate(hearing.scheduledDate) : null;
+
   return (
     <AppShell portal="citizen">
       <PageHeader
-        eyebrow="Citizen / Landowner"
+        eyebrow="Citizen portal"
         title="Hearing Info"
-        description="Prepare for your statutory personal hearing and keep the required documents ready."
-        actions={<DataClassBadge dataClass="synthetic" />}
+        description="Review hearing information recorded against your selected case."
       />
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Section title="Scheduled hearing" description="Your case hearing details are shown below.">
-          <div className="space-y-4">
-            <div className="surface-panel p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                  <CalendarClock className="size-3.5 text-primary" />
-                  Hearing status
+      <CitizenCaseState loading={query.isLoading} error={query.error} caseData={caseData} />
+      {caseData ? (
+        <>
+          {hearing ? (
+            <>
+              <section
+                className="mt-8 overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.04]"
+                aria-labelledby="upcoming-hearing-title"
+              >
+                <div className="grid gap-5 p-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:p-8">
+                  <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <CalendarDays className="size-7" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      id="upcoming-hearing-title"
+                      className="text-xs font-bold uppercase tracking-[0.18em] text-primary"
+                    >
+                      {hearing.status === "scheduled" ? "Upcoming hearing" : "Hearing information"}
+                    </p>
+                    <p className="mt-2 break-words font-serif text-3xl font-bold tabular-nums sm:text-4xl">
+                      {hearingDate ?? "Date not recorded"}
+                    </p>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <StatusPill tone={hearingTone(hearing.status)}>
+                        {hearing.status.replace(/_/g, " ")}
+                      </StatusPill>
+                      <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                        <FileText className="size-4" aria-hidden="true" /> Reference{" "}
+                        {hearing.hearingId}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <StatusPill tone="progress">{hearing.status}</StatusPill>
-              </div>
-              <p className="mt-3 text-xl font-bold text-foreground">{hearing.date} · {hearing.time}</p>
-            </div>
+              </section>
 
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <MapPin className="size-3.5 text-primary" />
-                Venue
-              </div>
-              <p className="mt-2 text-sm text-foreground">{hearing.venue}</p>
-            </div>
+              <Section title="Hearing details">
+                <dl className="surface-panel grid gap-5 p-5 sm:grid-cols-2 xl:grid-cols-4">
+                  <Detail label="Case" value={caseData.id} />
+                  <Detail label="Parcel" value={caseData.parcel.parcelRef || "Unavailable"} />
+                  <Detail label="Reference" value={hearing.hearingId} />
+                  <Detail label="Status" value={hearing.status.replace(/_/g, " ")} />
+                  <Detail label="Scheduled date" value={hearingDate ?? "Not recorded"} />
+                  <Detail label="Outcome" value={hearing.outcome || "Not recorded"} />
+                </dl>
+              </Section>
 
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <UserRound className="size-3.5 text-primary" />
-                Authority
-              </div>
-              <p className="mt-2 text-sm font-semibold text-foreground">{hearing.authority}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{hearing.designation}</p>
+              <Section title="What to expect">
+                <div className="surface-panel p-5 text-sm leading-relaxed text-muted-foreground">
+                  This hearing is recorded against your selected acquisition case. The outcome will
+                  appear here when recorded.
+                </div>
+              </Section>
+            </>
+          ) : (
+            <div className="mt-8 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+              No hearing is currently recorded for this case.
             </div>
-          </div>
-        </Section>
-
-        <Section title="Purpose and preparation" description="Bring the necessary proof and be ready for hearing discussion.">
-          <div className="space-y-4">
-            <div className="surface-panel p-4">
-              <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                <ShieldCheck className="size-3.5 text-primary" />
-                Purpose
-              </div>
-              <p className="mt-2 text-sm text-foreground">{hearing.purpose}</p>
-            </div>
-
-            <div className="surface-panel p-4">
-              <p className="text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">Bring these documents</p>
-              <ul className="mt-3 space-y-2 text-sm text-foreground">
-                {hearing.documents.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span className="mt-1 size-2 rounded-full bg-primary" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </Section>
-      </div>
+          )}
+          <Section title="Case identity">
+            <CitizenCaseContext caseData={caseData} compact />
+          </Section>
+        </>
+      ) : null}
     </AppShell>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-sm font-semibold capitalize">{value}</dd>
+    </div>
   );
 }

@@ -92,9 +92,9 @@ export const CASE_ADAPTER_FIXTURES: Record<CanonicalCaseId, CaseAdapterFields> =
       outcome: null,
     },
     valuation: {
-      baseValue: 2800000,
+      baseValue: 280000,
       multiplier: 1.5,
-      totalEstimatedValue: 4200000,
+      totalEstimatedValue: 420000,
     },
     award: null,
     payment: [],
@@ -117,7 +117,8 @@ export const CASE_ADAPTER_FIXTURES: Record<CanonicalCaseId, CaseAdapterFields> =
     fieldEvidence: {
       surveyCompleted: true,
       discrepancyFound: true,
-      notes: "GIS boundary differs from revenue survey by approx 4.2 metres at north edge. Flagged for re-survey.",
+      notes:
+        "GIS boundary differs from revenue survey by approx 4.2 metres at north edge. Flagged for re-survey.",
     },
     objections: [],
     hearing: null,
@@ -164,7 +165,8 @@ export const CASE_ADAPTER_FIXTURES: Record<CanonicalCaseId, CaseAdapterFields> =
     impact: {
       structuresAffected: true,
       treesAffected: true,
-      livelihoodImpact: "Full displacement — residential structure and agricultural land both affected.",
+      livelihoodImpact:
+        "Full displacement — residential structure and agricultural land both affected.",
     },
     fieldEvidence: {
       surveyCompleted: false,

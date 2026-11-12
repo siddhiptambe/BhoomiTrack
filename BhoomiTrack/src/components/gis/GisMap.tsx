@@ -1,38 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import * as turf from "@turf/turf";
-import type { GeoJsonFeatureCollection } from "@/lib/gis";
-
-/**
- * Given the actual click latlng and the full parcel feature collection,
- * return the `id` of the parcel whose polygon contains that point.
- *
- * This is needed because when parcels share a boundary edge, Leaflet
- * fires the click on whichever polygon was rendered last — which may
- * not be the parcel the user intended to select. Point-in-polygon lookup
- * against the DB geometries is the only reliable way to identify the
- * correct parcel regardless of rendering order.
- */
-function resolveParcelIdByPoint(
-  latlng: L.LatLng,
-  parcels: GeoJsonFeatureCollection,
-): string | null {
-  const clickPoint = turf.point([latlng.lng, latlng.lat]);
-  for (const feature of parcels.features) {
-    try {
-      const geom = feature.geometry as { type: string };
-      if (geom.type !== "Polygon" && geom.type !== "MultiPolygon") continue;
-      if (turf.booleanPointInPolygon(clickPoint, feature as never)) {
-        const id = (feature.properties as Record<string, unknown>)["id"];
-        return typeof id === "string" ? id : null;
-      }
-    } catch {
-      // skip invalid geometry
-    }
-  }
-  return null;
-}
+import { PARCEL_LABEL_ZOOM, type GeoJsonFeatureCollection } from "@/lib/gis";
 
 export type LayerVisibility = {
   engineerPoints: boolean;
@@ -51,9 +20,18 @@ type Props = {
   layers: LayerVisibility;
   selectedParcelId: string | null;
   onSelectParcel: (id: string | null) => void;
+  workflowStatusByParcelId?: ReadonlyMap<
+    string,
+    "completed" | "pending" | "under_review" | "blocked"
+  >;
 };
-
-const ALIGNMENT_STYLE: L.PathOptions = { color: "#2563eb", weight: 4, opacity: 1, lineCap: "round", lineJoin: "round" };
+const ALIGNMENT_STYLE: L.PathOptions = {
+  color: "#2563eb",
+  weight: 4,
+  opacity: 1,
+  lineCap: "round",
+  lineJoin: "round",
+};
 const PARCEL_STYLE: L.PathOptions = {
   color: "#64748b",
   weight: 1.5,
@@ -79,12 +57,32 @@ const CORRIDOR_STYLE: L.PathOptions = {
   fillColor: "#fbbf24",
   fillOpacity: 0.12,
 };
+const WORKFLOW_STATUS_COLORS = {
+  completed: "#16a34a",
+  pending: "#f59e0b",
+  under_review: "#2563eb",
+  blocked: "#dc2626",
+} as const;
+const WORKFLOW_STATUS_FILLS = {
+  completed: "#86efac",
+  pending: "#fcd34d",
+  under_review: "#93c5fd",
+  blocked: "#fca5a5",
+} as const;
 const ENGINEER_POINT_STYLE = {
   radius: 7,
   color: "#7f1d1d",
   fillColor: "#ef4444",
   fillOpacity: 0.95,
   weight: 2,
+};
+
+type LayerRefs = {
+  alignment?: L.GeoJSON;
+  engineerPoints?: L.GeoJSON;
+  parcels?: L.GeoJSON;
+  affectedParcels?: L.GeoJSON;
+  corridor?: L.GeoJSON;
 };
 
 export function GisMap({
@@ -96,130 +94,88 @@ export function GisMap({
   layers,
   selectedParcelId,
   onSelectParcel,
+  workflowStatusByParcelId,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const groupsRef = useRef<{
-    alignment?: L.GeoJSON;
-    engineerPoints?: L.GeoJSON;
-    parcels?: L.GeoJSON;
-    affectedParcels?: L.GeoJSON;
-    corridor?: L.GeoJSON;
-  }>({});
+  const groupsRef = useRef<LayerRefs>({});
+  const selectedParcelIdRef = useRef(selectedParcelId);
+  const layersRef = useRef(layers);
+  const onSelectParcelRef = useRef(onSelectParcel);
+
+  selectedParcelIdRef.current = selectedParcelId;
+  layersRef.current = layers;
+  onSelectParcelRef.current = onSelectParcel;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true });
+    const map = L.map(containerRef.current, {
+      zoomControl: true,
+      attributionControl: true,
+      preferCanvas: true,
+    });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
-    map.setView([18.55, 73.8], 11);
+    map.setView([18.91, 72.82], 11);
     mapRef.current = map;
     return () => {
       map.remove();
       mapRef.current = null;
+      groupsRef.current = {};
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
     Object.values(groupsRef.current).forEach((layer) => layer?.removeFrom(map));
-
+    const affectedIds = new Set(
+      affectedParcels.features.map((feature) => String(feature.properties["id"] ?? "")),
+    );
+    const parcelStyle = (feature?: GeoJSON.Feature): L.PathOptions => {
+      const id = String(feature?.properties?.["id"] ?? "");
+      if (id === selectedParcelIdRef.current) return SELECTED_STYLE;
+      const base = affectedIds.has(id) ? AFFECTED_STYLE : PARCEL_STYLE;
+      const workflowStatus = workflowStatusByParcelId?.get(id);
+      return workflowStatus
+        ? {
+            ...base,
+            color: WORKFLOW_STATUS_COLORS[workflowStatus],
+            fillColor: WORKFLOW_STATUS_FILLS[workflowStatus],
+            fillOpacity: 0.45,
+            weight: 3,
+          }
+        : base;
+    };
+    const selectFromFeature = (feature: GeoJSON.Feature) => {
+      const id = String(feature.properties?.["id"] ?? "");
+      if (id) onSelectParcelRef.current(id);
+    };
     const alignmentLayer = L.geoJSON(alignment as never, {
+      interactive: false,
       style: () => ALIGNMENT_STYLE,
     });
-
     const engineerPointsLayer = L.geoJSON(engineerPoints as never, {
-      pointToLayer: (feature, latlng) => L.circleMarker(latlng, ENGINEER_POINT_STYLE),
+      interactive: false,
+      pointToLayer: (_feature, latlng) =>
+        L.circleMarker(latlng, { ...ENGINEER_POINT_STYLE, interactive: false }),
     });
-
     const corridorLayer = L.geoJSON(corridor as never, {
+      interactive: false,
       style: () => CORRIDOR_STYLE,
     });
-
     const affectedParcelLayer = L.geoJSON(affectedParcels as never, {
       style: () => AFFECTED_STYLE,
-      onEachFeature: (_feature, layer) => {
-        layer.on("click", (e: L.LeafletMouseEvent) => {
-          // Use actual click coordinates for point-in-polygon resolution.
-          // Leaflet fires the event on whichever polygon was rendered last
-          // when parcels share a boundary — PIP lookup finds the true parcel.
-          const id = resolveParcelIdByPoint(e.latlng, parcels);
-          if (id !== null) {
-            onSelectParcel(id === selectedParcelId ? null : id);
-          }
-        });
-      },
+      onEachFeature: (feature, layer) =>
+        layer.on("click", () => selectFromFeature(feature as GeoJSON.Feature)),
     });
-
     const parcelLayer = L.geoJSON(parcels as never, {
-      style: (feature) => {
-        const props = (feature?.properties ?? {}) as Record<string, unknown>;
-        const id = String(props["id"] ?? "");
-        const isSelected = id === selectedParcelId;
-        const isAffected = affectedParcels.features.some(
-          (item) => String((item.properties?.["id"] as string | undefined) ?? "") === id,
-        );
-        return isSelected ? SELECTED_STYLE : isAffected ? AFFECTED_STYLE : PARCEL_STYLE;
-      },
-      onEachFeature: (feature, layer) => {
-        layer.on("click", (e: L.LeafletMouseEvent) => {
-          // Use actual click coordinates for point-in-polygon resolution.
-          // Leaflet fires the event on whichever polygon was rendered last
-          // when parcels share a boundary — PIP lookup finds the true parcel.
-          const id = resolveParcelIdByPoint(e.latlng, parcels);
-          if (id !== null) {
-            onSelectParcel(id === selectedParcelId ? null : id);
-          }
-        });
-        const props = (feature.properties ?? {}) as Record<string, unknown>;
-        const parcelRef = typeof props["parcel_ref"] === "string" ? props["parcel_ref"] : "";
-        const numMatch = parcelRef.match(/-(\d+)$/);
-        const label = numMatch ? numMatch[1] : "";
-        if (label) {
-          (layer as any).bindTooltip(label, {
-            permanent: true,
-            direction: "center",
-            className: "parcel-label",
-            offset: [0, 0],
-          });
-        }
-      },
+      style: parcelStyle,
+      onEachFeature: (feature, layer) =>
+        layer.on("click", () => selectFromFeature(feature as GeoJSON.Feature)),
     });
-
-    if (layers.parcels) parcelLayer.addTo(map);
-    if (layers.affected && affectedParcels.features.length) affectedParcelLayer.addTo(map);
-    if (layers.corridor && corridor.features.length) {
-      corridorLayer.addTo(map);
-      corridorLayer.bringToFront();
-    }
-    if (layers.alignment && alignment.features.length) {
-      alignmentLayer.addTo(map);
-      alignmentLayer.bringToFront();
-    }
-    if (layers.engineerPoints && engineerPoints.features.length) {
-      engineerPointsLayer.addTo(map);
-      engineerPointsLayer.bringToFront();
-    }
-
-    if (map && parcelLayer) {
-      const updateLabels = () => {
-        const zoom = map.getZoom();
-        parcelLayer.eachLayer((l: any) => {
-          if (zoom >= 14) {
-            l.openTooltip?.();
-          } else {
-            l.closeTooltip?.();
-          }
-        });
-      };
-      map.on("zoomend", updateLabels);
-      updateLabels();
-    }
-
     groupsRef.current = {
       alignment: alignmentLayer,
       engineerPoints: engineerPointsLayer,
@@ -227,19 +183,149 @@ export function GisMap({
       affectedParcels: affectedParcelLayer,
       corridor: corridorLayer,
     };
-
-    const bounds = L.latLngBounds([]);
-    [alignmentLayer, engineerPointsLayer, corridorLayer, parcelLayer, affectedParcelLayer].forEach((layer) => {
-      layer.eachLayer((child) => {
-        const childBounds = (child as L.Layer & { getBounds?: () => L.LatLngBounds }).getBounds?.();
-        if (childBounds?.isValid()) bounds.extend(childBounds);
-      });
+    const current = layersRef.current;
+    const entries: Array<[keyof LayerRefs, boolean]> = [
+      ["parcels", current.parcels],
+      ["affectedParcels", current.affected && affectedParcels.features.length > 0],
+      ["corridor", current.corridor && corridor.features.length > 0],
+      ["alignment", current.alignment && alignment.features.length > 0],
+      ["engineerPoints", current.engineerPoints && engineerPoints.features.length > 0],
+    ];
+    entries.forEach(([key, visible]) => {
+      const layer = groupsRef.current[key];
+      if (layer) {
+        if (visible) layer.addTo(map);
+        else layer.removeFrom(map);
+      }
     });
 
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [32, 32] });
-    }
-  }, [alignment, engineerPoints, parcels, affectedParcels, corridor, selectedParcelId, onSelectParcel, layers]);
+    const bounds = L.featureGroup(
+      [alignmentLayer, affectedParcelLayer].filter((layer) => layer.getLayers().length > 0),
+    ).getBounds();
+    if (bounds.isValid()) map.fitBounds(bounds.pad(0.08), { animate: false });
+  }, [alignment, engineerPoints, parcels, affectedParcels, corridor, workflowStatusByParcelId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const parcelLayer = groupsRef.current.parcels;
+    if (!map || !parcelLayer) return;
+    parcelLayer.eachLayer((layer) => {
+      const path = layer as L.Path & { feature?: GeoJSON.Feature };
+      const id = String(path.feature?.properties?.["id"] ?? "");
+      const affected = affectedParcels.features.some(
+        (feature) => String(feature.properties["id"] ?? "") === id,
+      );
+      path.setStyle(
+        id === selectedParcelId
+          ? SELECTED_STYLE
+          : workflowStatusByParcelId?.has(id)
+            ? {
+                ...(affected ? AFFECTED_STYLE : PARCEL_STYLE),
+                color: WORKFLOW_STATUS_COLORS[workflowStatusByParcelId.get(id)!],
+                fillColor: WORKFLOW_STATUS_FILLS[workflowStatusByParcelId.get(id)!],
+                fillOpacity: 0.45,
+                weight: 3,
+              }
+            : affected
+              ? AFFECTED_STYLE
+              : PARCEL_STYLE,
+      );
+    });
+  }, [selectedParcelId, affectedParcels, workflowStatusByParcelId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const parcelLayer = groupsRef.current.parcels;
+    if (!map || !parcelLayer || !selectedParcelId) return;
+
+    parcelLayer.eachLayer((layer) => {
+      const featureLayer = layer as L.Path & {
+        feature?: GeoJSON.Feature;
+        getBounds?: () => L.LatLngBounds;
+      };
+      if (String(featureLayer.feature?.properties?.["id"] ?? "") !== selectedParcelId) return;
+      const bounds = featureLayer.getBounds?.();
+      if (bounds?.isValid()) {
+        map.fitBounds(bounds.pad(0.2), { maxZoom: 19, animate: false });
+      }
+    });
+  }, [
+    selectedParcelId,
+    parcels,
+    alignment,
+    engineerPoints,
+    affectedParcels,
+    corridor,
+    workflowStatusByParcelId,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const parcelLayer = groupsRef.current.parcels;
+    if (!map || !parcelLayer) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const updateVisibleLabels = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const zoomedIn = map.getZoom() >= PARCEL_LABEL_ZOOM;
+        const mapBounds = map.getBounds();
+        parcelLayer.eachLayer((layer) => {
+          const path = layer as L.Path & {
+            feature?: GeoJSON.Feature;
+            getBounds?: () => L.LatLngBounds;
+          };
+          const featureBounds = path.getBounds?.();
+          const visible = Boolean(featureBounds?.isValid() && featureBounds.intersects(mapBounds));
+          const id = String(path.feature?.properties?.["id"] ?? "");
+          if (zoomedIn && visible && id) {
+            const label = String(path.feature?.properties?.["parcel_ref"] ?? "").match(
+              /-(\d+)$/,
+            )?.[1];
+            if (label && !path.getTooltip()) {
+              path.bindTooltip(label, {
+                permanent: true,
+                interactive: false,
+                direction: "center",
+                className: "parcel-label",
+                offset: [0, 0],
+              });
+            }
+            path.openTooltip();
+          } else {
+            path.closeTooltip();
+            path.unbindTooltip();
+          }
+        });
+      }, 120);
+    };
+    map.on("zoomend", updateVisibleLabels);
+    map.on("moveend", updateVisibleLabels);
+    updateVisibleLabels();
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off("zoomend", updateVisibleLabels);
+      map.off("moveend", updateVisibleLabels);
+    };
+  }, [alignment, engineerPoints, parcels, affectedParcels, corridor]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visibility: Array<[keyof LayerRefs, boolean]> = [
+      ["parcels", layers.parcels],
+      ["affectedParcels", layers.affected],
+      ["corridor", layers.corridor],
+      ["alignment", layers.alignment],
+      ["engineerPoints", layers.engineerPoints],
+    ];
+    visibility.forEach(([key, visible]) => {
+      const layer = groupsRef.current[key];
+      if (layer) {
+        if (visible) layer.addTo(map);
+        else layer.removeFrom(map);
+      }
+    });
+  }, [layers]);
 
   return (
     <div
